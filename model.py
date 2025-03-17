@@ -2,6 +2,7 @@ import numpy as np
 import layers
 from progress_bar import ProgressBar
 
+
 class SequentialModel:
     def __init__(self):
         self.layers = []
@@ -70,11 +71,12 @@ class SequentialModel:
             x = layer.forprop(x)
         return x
 
-    def backprop(self, output_gradient):
+    def backprop(self, output_gradient, clip_value=1):
         for layer in reversed(self.layers):
-            output_gradient = layer.backprop(output_gradient)
+            # back propagates to accumulate weight/bias changes and outputs input gradient
+            output_gradient = layer.backprop(output_gradient, clip_value)
 
-    def train(self, training_data, training_labels, epochs, batch_size, learning_rate):
+    def train(self, training_data, training_labels, epochs, batch_size, learning_rate, clip_value=1):
         progress = ProgressBar()
         progress.start()
         training_examples = training_data.shape[0]
@@ -90,7 +92,7 @@ class SequentialModel:
                 training_accuracy = np.sum(np.argmax(predictions, axis=0) == np.argmax(labels, axis=0))/batch_size
 
                 output_gradient = predictions-labels
-                self.backprop(output_gradient)
+                self.backprop(output_gradient, clip_value)
 
                 progress.update(epochs, batch+epoch*batches_per_epoch, batches_per_epoch, training_accuracy, loss)
 

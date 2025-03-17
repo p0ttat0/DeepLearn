@@ -108,7 +108,7 @@ class Dense:
         self.unactivated_output_cache = activations[0]
         return activations[1]
 
-    def backprop(self, output_gradient):
+    def backprop(self, output_gradient, clip_value=1):
         assert self.input_cache is not None
         assert self.unactivated_output_cache is not None
 
@@ -122,6 +122,10 @@ class Dense:
             return dw, db, di
 
         d_w, d_b, d_i = calculate_gradients(self.weights, output_gradient, self.input_cache, self.unactivated_output_cache, self.get_d_activation_function())
+
+        d_w = np.clip(d_w, -clip_value, clip_value)
+        d_b = np.clip(d_b, -clip_value, clip_value)
+        d_i = np.clip(d_i, -clip_value, clip_value)
 
         # Accumulate gradients
         self.weight_change_cache += d_w
@@ -157,5 +161,5 @@ class Flatten:
     def forprop(self, x):
         return x.reshape(self.output_shape)
 
-    def backprop(self, x):
+    def backprop(self, x, clip_value=None):
         return x.reshape(self.input_shape)

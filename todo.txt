@@ -1,12 +1,10 @@
-add differnet loss functions
-add variable derivatives for activation functions
+add different loss function support (model output gradient, act funct derivatives)
 add optimizer
-add L1/L2 Regularization
 add Dropout
-add Label Smoothing?
-add Early Stopping
-add Learning Rate Schedules
 
 look into
 Stochastic Weight Averaging
 Mixed Precision Training
+Label Smoothing
+Early Stopping
+L1/L2 Regularization
