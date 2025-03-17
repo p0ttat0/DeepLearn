@@ -3,6 +3,7 @@ from layers import Dense, Flatten
 from data import Dataset
 import numpy as np
 
+
 training_data, training_labels, validation_data, validation_labels = Dataset.mnist()
 
 my_model = SequentialModel()
