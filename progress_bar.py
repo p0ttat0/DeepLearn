@@ -33,17 +33,17 @@ class ProgressBar:
             time_est_minutes, time_est_seconds = divmod(time_est, 60)
             time_est_hours, time_est_minutes = divmod(time_est_minutes, 60)
 
-            avr_batch_time = time_elapsed / batches_completed
-            avr_batch_time_minutes, avr_batch_time_seconds = divmod(avr_batch_time, 60)
-            avr_batch_time_hours, avr_batch_time_minutes = divmod(avr_batch_time_minutes, 60)
+            avr_epoch_time = time_elapsed / (batches_completed/batches_per_epoch)
+            avr_epoch_time_minutes, avr_epoch_time_seconds = divmod(avr_epoch_time, 60)
+            avr_epoch_time_hours, avr_epoch_time_minutes = divmod(avr_epoch_time_minutes, 60)
         else:
             time_est_hours, time_est_minutes, time_est_seconds = 0, 0, 0
-            avr_batch_time_seconds, avr_batch_time_minutes, avr_batch_time_hours = 0, 0, 0
+            avr_epoch_time_seconds, avr_epoch_time_minutes, avr_epoch_time_hours = 0, 0, 0
 
         print(
             f'\rprogress: [{filled}{spaces}] |{(percent * 100):.2f}%|      '
             f'loss: {loss:.4f}     '
-            f'training_accuracy: {training_accuracy:.0f}%     '
+            f'training_accuracy: {round(training_accuracy*100):02d}%     '
             f'time left est: |{time_est_hours:.0f}:{time_est_minutes:.0f}:{time_est_seconds:.0f}|     '
-            f'average time/batch: |{avr_batch_time_hours:.0f}:{avr_batch_time_minutes:.0f}:{avr_batch_time_seconds:.0f}|',
+            f'average time/epoch: |{avr_epoch_time_hours:.0f}:{avr_epoch_time_minutes:.0f}:{avr_epoch_time_seconds:.0f}|',
             end='')
