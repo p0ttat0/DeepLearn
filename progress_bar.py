@@ -5,7 +5,6 @@ import time
 class ProgressBar:
     def __init__(self):
         self.start_time = None
-        self.time_elapsed = None
 
     def start(self):
         self.start_time = time.time()
@@ -14,14 +13,14 @@ class ProgressBar:
         time_elapsed = time.time() - self.start_time
         minutes, seconds = divmod(time_elapsed, 60)
         hours, minutes = divmod(minutes, 60)
-        self.time_elapsed = f'{hours:.0f}:{minutes:.0f}:{seconds:.0f}'
+        print(f'\n\ntimed elapsed: {hours:.0f}:{minutes:.0f}:{seconds:.0f}')
 
     def update(self, epochs, batches_completed, batches_per_epoch, training_accuracy, loss, bar_length=50):
         now = time.time()
         time_elapsed = now - self.start_time
         total_batches = epochs * batches_per_epoch
 
-        percent = batches_completed / total_batches
+        percent = (batches_completed+1) / total_batches
         filled_length = math.ceil(bar_length * percent)
         spaces_length = bar_length - filled_length
 
@@ -33,7 +32,7 @@ class ProgressBar:
             time_est_minutes, time_est_seconds = divmod(time_est, 60)
             time_est_hours, time_est_minutes = divmod(time_est_minutes, 60)
 
-            avr_epoch_time = time_elapsed / (batches_completed/batches_per_epoch)
+            avr_epoch_time = time_elapsed / ((batches_completed+1)/batches_per_epoch)
             avr_epoch_time_minutes, avr_epoch_time_seconds = divmod(avr_epoch_time, 60)
             avr_epoch_time_hours, avr_epoch_time_minutes = divmod(avr_epoch_time_minutes, 60)
         else:

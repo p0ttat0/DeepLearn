@@ -16,13 +16,13 @@ my_model.layers = [
 ]
 
 my_model.build()
-my_model.forprop(np.random.rand(12, 28, 28))
-my_model.backprop(np.random.rand(10, 12))
+# my_model.forprop(np.random.rand(12, 28, 28))
+# my_model.backprop(np.random.rand(10, 12))
 # my_model.save('saved models', 'model')
 my_model.load('saved models/model.npz')
-my_model.forprop(np.random.rand(12, 28, 28))
-my_model.backprop(np.random.rand(10, 12))
+# my_model.forprop(np.random.rand(12, 28, 28))
+# my_model.backprop(np.random.rand(10, 12))
 
-my_model.train(training_data, training_labels, 30, 1000, 0.001)
-print("idk")
+my_model.train(training_data, training_labels, 200, 1200, 0.001)
+
 my_model.save('saved models', 'model')

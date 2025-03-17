@@ -104,3 +104,5 @@ class SequentialModel:
 
             for layer in self.layers:
                 layer.apply_changes(batch_size, learning_rate)
+
+        progress.end()
