@@ -1,0 +1,3 @@
+add differnet loss functions
+add variable derivatives for activation functions
+add optimizer
