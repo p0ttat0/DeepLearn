@@ -36,3 +36,8 @@ class Adam:
         bias_lr = bc_m_bias / (np.sqrt(bc_v_bias) + self.epsilon) * learning_rate
 
         return weight_lr, bias_lr
+
+class NoOptimizer:
+    @staticmethod
+    def adjust_lr(layer, weight_gradient, bias_gradient, learning_rate):
+        return weight_gradient*learning_rate, bias_gradient*learning_rate

@@ -1,7 +1,8 @@
 import numpy as np
 import layers
 from progress_bar import ProgressBar
-from optimizers import Adam
+from optimizers import Adam, NoOptimizer
+from matplotlib import pyplot as plt
 
 
 class SequentialModel:
@@ -16,6 +17,8 @@ class SequentialModel:
         match optimizer:
             case 'Adam':
                 return Adam()
+            case 'none':
+                return NoOptimizer()
             case _:
                 raise Exception(f"no optimizer called {optimizer}")
 
@@ -29,6 +32,13 @@ class SequentialModel:
             layer.build(input_shape)
             layer.layer_num = layer_num
             input_shape = layer.output_shape
+
+            if layer.type not in ['flatten']:
+                self.optimizer_obj.fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
+                self.optimizer_obj.sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
+                self.optimizer_obj.prev_fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
+                self.optimizer_obj.prev_sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
+
             layer_num += 1
 
     def save(self, directory, file_name):
@@ -95,6 +105,7 @@ class SequentialModel:
         progress.start()
         training_examples = training_data.shape[0]
         batches_per_epoch = training_examples // batch_size
+        losses = []
 
         for epoch in range(epochs):
             for batch in range(batches_per_epoch):
@@ -108,15 +119,15 @@ class SequentialModel:
                 output_gradient = predictions-labels
                 self.backprop(output_gradient, clip_value)
 
+                losses.append(loss)
                 progress.update(epochs, batch+epoch*batches_per_epoch, batches_per_epoch, training_accuracy, loss)
-
-                '''y = np.random.randint(0, batch_size-1)
-                print(np.argmax(labels[:, y]))
-                from matplotlib import pyplot as plt
-                plt.imshow(training_data[data_start:data_end][y], interpolation='nearest')
-                plt.show()'''
 
                 for layer in self.layers:
                     layer.apply_changes(batch_size, learning_rate, self.optimizer_obj)
 
         progress.end()
+
+        x, y = np.arange(len(losses)), losses
+        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
+        plt.plot(x, y, 'o')
+        plt.show()

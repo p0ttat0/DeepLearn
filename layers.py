@@ -114,19 +114,15 @@ class Dense:
         assert self.unactivated_output_cache is not None
 
         @nb.njit(cache=True)
-        def calculate_gradients(weights, out_gradient, inputs, unactivated_output, d_act_func):
+        def calculate_gradients(out_gradient, inputs, weights, unactivated_output, d_act_func, clip_amount):
             dz = out_gradient * d_act_func(unactivated_output)
-            dw = dz.dot(inputs.T)
-            db = np.sum(dz, axis=1).reshape(-1, 1)
-            di = weights.T.dot(dz)
+            dw = np.clip(dz.dot(inputs.T), -clip_amount, clip_amount)
+            db = np.clip(np.sum(dz, axis=1).reshape(-1, 1), -clip_amount, clip_amount)
+            di = np.clip(weights.T.dot(dz), -clip_amount, clip_amount)
 
             return dw, db, di
 
-        d_w, d_b, d_i = calculate_gradients(self.weights, output_gradient, self.input_cache, self.unactivated_output_cache, self.get_d_activation_function())
-
-        d_w = np.clip(d_w, -clip_value, clip_value)
-        d_b = np.clip(d_b, -clip_value, clip_value)
-        d_i = np.clip(d_i, -clip_value, clip_value)
+        d_w, d_b, d_i = calculate_gradients(output_gradient, self.input_cache, self.weights, self.unactivated_output_cache, self.get_d_activation_function(), clip_value)
 
         # Accumulate gradients
         self.weight_change_cache += d_w
