@@ -9,6 +9,7 @@ class Dense:
         self.size = size
         self.input_shape = None
         self.output_shape = [size]
+        self.layer_num = None
 
         self.weights = None
         self.bias = None
@@ -133,10 +134,15 @@ class Dense:
 
         return d_i
 
-    def apply_changes(self, batch_size, learning_rate):
+    def apply_changes(self, batch_size, lr, optimizer):
         # Update weights and biases
-        self.weights -= (1 / batch_size) * self.weight_change_cache * learning_rate
-        self.bias -= (1 / batch_size) * self.bias_change_cache * learning_rate
+        self.weight_change_cache /= batch_size
+        self.bias_change_cache /= batch_size
+
+        weight_lr, bias_lr = optimizer.adjust_lr(self.layer_num, self.weight_change_cache, self.bias_change_cache, lr)
+
+        self.weights -= self.weight_change_cache * weight_lr
+        self.bias -= self.bias_change_cache * bias_lr
 
         # Reset gradient caches
         self.weight_change_cache = np.zeros_like(self.weights)
@@ -155,7 +161,7 @@ class Flatten:
     def build(self, input_shape):   # nothing to initialize
         pass
 
-    def apply_changes(self, batch_size, learning_rate):    # nothing to change
+    def apply_changes(self, batch_size, learning_rate, optimizer):    # nothing to change
         pass
 
     def forprop(self, x):

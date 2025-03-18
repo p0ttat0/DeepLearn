@@ -1,21 +1,35 @@
 import numpy as np
 import layers
 from progress_bar import ProgressBar
+from optimizers import Adam
 
 
 class SequentialModel:
     def __init__(self):
         self.layers = []
         self.optimizer = None
+        self.optimizer_obj = None
         self.loss_func = None
 
-    def build(self, optimizer=None, loss_func='mse'):
+    @staticmethod
+    def get_optimizer(optimizer):
+        match optimizer:
+            case 'Adam':
+                return Adam()
+            case _:
+                raise Exception(f"no optimizer called {optimizer}")
+
+    def build(self, optimizer='Adam', loss_func='cce'):
         self.optimizer = optimizer
+        self.optimizer_obj = self.get_optimizer(optimizer)
         self.loss_func = loss_func
         input_shape = self.layers[0].input_shape
+        layer_num = 0
         for layer in self.layers:
             layer.build(input_shape)
+            layer.layer_num = layer_num
             input_shape = layer.output_shape
+            layer_num += 1
 
     def save(self, directory, file_name):
         layer_data = {'layer_num': len(self.layers),
@@ -64,7 +78,7 @@ class SequentialModel:
 
             self.layers.append(new_layer)
 
-        self.build(data['optimizer'], data['loss_func'])
+        self.build(str(data['optimizer']), str(data['loss_func']))
 
     def forprop(self, x):
         for layer in self.layers:
@@ -102,7 +116,7 @@ class SequentialModel:
                 plt.imshow(training_data[data_start:data_end][y], interpolation='nearest')
                 plt.show()'''
 
-            for layer in self.layers:
-                layer.apply_changes(batch_size, learning_rate)
+                for layer in self.layers:
+                    layer.apply_changes(batch_size, learning_rate, self.optimizer_obj)
 
         progress.end()
