@@ -13,6 +13,13 @@ class Adam:
         self.prev_sme = {}  # second moment estimate
 
     def adjust_lr(self, layer, weight_gradient, bias_gradient, learning_rate):
+        if layer not in self.prev_fme:
+            # Initialize moments for this layer
+            self.prev_fme[layer] = [np.zeros_like(weight_gradient), np.zeros_like(bias_gradient)]
+            self.prev_sme[layer] = [np.zeros_like(weight_gradient), np.zeros_like(bias_gradient)]
+            self.fme[layer] = [np.zeros_like(weight_gradient), np.zeros_like(bias_gradient)]
+            self.sme[layer] = [np.zeros_like(weight_gradient), np.zeros_like(bias_gradient)]
+
         self.step += 1
 
         m_weights = self.b1 * self.prev_fme[layer][0] + (1 - self.b1) * weight_gradient

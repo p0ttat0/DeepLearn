@@ -68,4 +68,4 @@ class ActivationFunction:
     @staticmethod
     @nb.njit(cache=True)        # assumes categorical cross entropy
     def d_softmax(x):
-        return x
+        return np.ones_like(x)
