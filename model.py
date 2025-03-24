@@ -33,7 +33,7 @@ class SequentialModel:
             layer.layer_num = layer_num
             input_shape = layer.output_shape
 
-            if layer.type not in ['flatten']:
+            if layer.type not in ['flatten'] and optimizer not in ['none']:
                 self.optimizer_obj.fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
                 self.optimizer_obj.sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
                 self.optimizer_obj.prev_fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
@@ -107,7 +107,13 @@ class SequentialModel:
         batches_per_epoch = training_examples // batch_size
         losses = []
 
+        def shuffle_data(d, l):
+            assert d.shape[0] == l.T.shape[0]
+            p = np.random.permutation(d.shape[0])
+            return d[p], l.T[p].T
+
         for epoch in range(epochs):
+            training_data, training_labels = shuffle_data(training_data, training_labels)
             for batch in range(batches_per_epoch):
                 labels = training_labels[:, batch * batch_size:(batch + 1) * batch_size]
                 data = training_data[batch * batch_size:(batch + 1) * batch_size]
@@ -128,6 +134,6 @@ class SequentialModel:
         progress.end()
 
         x, y = np.arange(len(losses)), losses
-        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
         plt.plot(x, y, 'o')
+        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
         plt.show()
