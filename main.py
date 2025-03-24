@@ -18,8 +18,8 @@ my_model.layers = [
 my_model.build(optimizer='Adam')
 # my_model.forprop(np.random.rand(12, 28, 28))
 # my_model.backprop(np.random.rand(10, 12))
-# my_model.save('saved models', 'model')
-#my_model.load('saved models/model1.npz')
+# my_model.save('saved models', 'model1')
+# my_model.load('saved models/model1.npz')
 # my_model.forprop(np.random.rand(12, 28, 28))
 # my_model.backprop(np.random.rand(10, 12))
 

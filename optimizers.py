@@ -44,6 +44,7 @@ class Adam:
 
         return weight_lr, bias_lr
 
+
 class NoOptimizer:
     @staticmethod
     def adjust_lr(layer, weight_gradient, bias_gradient, learning_rate):
