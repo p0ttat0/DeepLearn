@@ -100,7 +100,7 @@ class SequentialModel:
             # back propagates to accumulate weight/bias changes and outputs input gradient
             output_gradient = layer.backprop(output_gradient, clip_value)
 
-    def train(self, training_data, training_labels, epochs, batch_size, learning_rate, clip_value=1):
+    def train(self, training_data, training_labels, epochs, batch_size, learning_rate, clip_value=0.5):
         progress = ProgressBar()
         progress.start()
         training_examples = training_data.shape[0]

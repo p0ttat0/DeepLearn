@@ -34,10 +34,10 @@ class Adam:
         self.sme[layer][1], self.sme[layer][0] = v_bias, v_weights
 
         bc_m_weights = m_weights / (1 - self.b1 ** self.step)
-        bc_v_weights = v_weights / (1 - self.b1 ** self.step)
+        bc_v_weights = v_weights / (1 - self.b2 ** self.step)
 
         bc_m_bias = m_bias / (1 - self.b1 ** self.step)
-        bc_v_bias = v_bias / (1 - self.b1 ** self.step)
+        bc_v_bias = v_bias / (1 - self.b2 ** self.step)
 
         weight_lr = bc_m_weights / (np.sqrt(bc_v_weights) + self.epsilon) * learning_rate
         bias_lr = bc_m_bias / (np.sqrt(bc_v_bias) + self.epsilon) * learning_rate

@@ -27,6 +27,7 @@ class Dense:
                 }
         """
         self.input_cache = None
+        self.activated_output_cache = None
         self.unactivated_output_cache = None
         self.weight_change_cache = None
         self.bias_change_cache = None
@@ -106,6 +107,7 @@ class Dense:
 
         activations = forward(x, self.weights, self.bias, self.get_activation_function())
         self.input_cache = x
+        self.activated_output_cache = activations[1]
         self.unactivated_output_cache = activations[0]
         return activations[1]
 
@@ -114,15 +116,22 @@ class Dense:
         assert self.unactivated_output_cache is not None
 
         @nb.njit(cache=True)
-        def calculate_gradients(out_gradient, inputs, weights, unactivated_output, d_act_func, clip_amount):
-            dz = out_gradient * d_act_func(unactivated_output)
+        def calculate_gradients(out_gradient, inputs, weights, activated_output, unactivated_output, act_func, d_act_func, clip_amount):
+            match act_func:
+                case 'relu' | 'sigmoid' | 'tanh' | 'softmax':
+                    dz = out_gradient * d_act_func(activated_output)
+                case 'swish' | 'mish':
+                    dz = out_gradient * d_act_func(unactivated_output)
+                case _:
+                    raise Exception("activation function derivative error")
+
             dw = np.clip(dz.dot(inputs.T), -clip_amount, clip_amount)
             db = np.clip(np.sum(dz, axis=1).reshape(-1, 1), -clip_amount, clip_amount)
             di = np.clip(weights.T.dot(dz), -clip_amount, clip_amount)
 
             return dw, db, di
 
-        d_w, d_b, d_i = calculate_gradients(output_gradient, self.input_cache, self.weights, self.unactivated_output_cache, self.get_d_activation_function(), clip_value)
+        d_w, d_b, d_i = calculate_gradients(output_gradient, self.input_cache, self.weights, self.activated_output_cache, self.unactivated_output_cache, self.activation_function, self.get_d_activation_function(), clip_value)
 
         # Accumulate gradients
         self.weight_change_cache += d_w
