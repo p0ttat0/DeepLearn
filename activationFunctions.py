@@ -39,7 +39,7 @@ class ActivationFunction:
     @staticmethod
     @nb.njit(cache=True)
     def d_relu(x):
-        return (x > 0).astype(float)
+        return (x > 0).astype(np.float64)
 
     @staticmethod
     @nb.njit(cache=True)

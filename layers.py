@@ -164,6 +164,9 @@ class Flatten:
             self.output_shape = [int(np.prod(input_shape[-2:])), -1]
         else:
             self.output_shape = input_shape
+        self.input_cache = None
+        self.activated_output_cache = None
+        self.unactivated_output_cache = None
 
     def build(self, input_shape):   # nothing to initialize
         pass
@@ -172,7 +175,11 @@ class Flatten:
         pass
 
     def forprop(self, x):
-        return x.reshape(self.output_shape)
+        self.input_cache = x
+        out = x.reshape(self.output_shape)
+        self.activated_output_cache = out
+        self.unactivated_output_cache = out
+        return out
 
     def backprop(self, x):
         return x.reshape(self.input_shape)
