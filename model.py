@@ -43,6 +43,7 @@ class SequentialModel:
     def save(self, directory, file_name):
         layer_data = {'layer_num': len(self.layers),
                       'optimizer': self.optimizer,
+                      'optimizer_step': self.optimizer_obj.step,
                       'loss_func': self.loss_func,
                       }
 
@@ -88,6 +89,7 @@ class SequentialModel:
             self.layers.append(new_layer)
 
         self.build(str(data['optimizer']), str(data['loss_func']))
+        self.optimizer_obj.step = int(data['optimizer_step'])
 
     def forprop(self, x):
         for layer in self.layers:
