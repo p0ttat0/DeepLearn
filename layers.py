@@ -98,7 +98,7 @@ class Dense:
             case 'none':
                 return np.zeros((output_size, 1))
 
-    def forprop(self, x):
+    def forprop(self, x: np.ndarray):
         @nb.njit(cache=True)
         def forward(inpt: np.ndarray, weights: np.ndarray, bias: np.ndarray, act_func):
             unactivated = np.dot(weights, inpt) + bias
@@ -111,12 +111,12 @@ class Dense:
         self.unactivated_output_cache = activations[0]
         return activations[1]
 
-    def backprop(self, output_gradient, clip_value=1):
+    def backprop(self, output_gradient):
         assert self.input_cache is not None
         assert self.unactivated_output_cache is not None
 
         @nb.njit(cache=True)
-        def calculate_gradients(out_gradient, inputs, weights, activated_output, unactivated_output, act_func, d_act_func, clip_amount):
+        def calculate_gradients(out_gradient, inputs, weights, activated_output, unactivated_output, act_func, d_act_func):
             match act_func:
                 case 'relu' | 'sigmoid' | 'tanh' | 'softmax':
                     dz = out_gradient * d_act_func(activated_output)
@@ -125,13 +125,13 @@ class Dense:
                 case _:
                     raise Exception("activation function derivative error")
 
-            dw = np.clip(dz.dot(inputs.T), -clip_amount, clip_amount)
-            db = np.clip(np.sum(dz, axis=1).reshape(-1, 1), -clip_amount, clip_amount)
-            di = np.clip(weights.T.dot(dz), -clip_amount, clip_amount)
+            dw = dz.dot(inputs.T)
+            db = np.sum(dz, axis=1).reshape(-1, 1)
+            di = weights.T.dot(dz)
 
             return dw, db, di
 
-        d_w, d_b, d_i = calculate_gradients(output_gradient, self.input_cache, self.weights, self.activated_output_cache, self.unactivated_output_cache, self.activation_function, self.get_d_activation_function(), clip_value)
+        d_w, d_b, d_i = calculate_gradients(output_gradient, self.input_cache, self.weights, self.activated_output_cache, self.unactivated_output_cache, self.activation_function, self.get_d_activation_function())
 
         # Accumulate gradients
         self.weight_change_cache += d_w
@@ -139,15 +139,17 @@ class Dense:
 
         return d_i
 
-    def apply_changes(self, batch_size, lr, optimizer):
+    def apply_changes(self, batch_size, lr, optimizer, clip_value):
         # Update weights and biases
         self.weight_change_cache /= batch_size
         self.bias_change_cache /= batch_size
 
-        weight_lr, bias_lr = optimizer.adjust_lr(self.layer_num, self.weight_change_cache, self.bias_change_cache, lr)
+        weight_change, bias_change = optimizer.adjust_lr(self.layer_num, self.weight_change_cache, self.bias_change_cache, lr)
 
-        self.weights -= self.weight_change_cache * weight_lr
-        self.bias -= self.bias_change_cache * bias_lr
+        self.weights -= np.clip(weight_change, -clip_value, clip_value)
+        self.bias -= np.clip(bias_change, -clip_value, clip_value)
+
+        # print(f"Layer {self.layer_num}: Weight grad mean={np.mean(self.weight_change_cache)}, Bias grad mean={np.mean(self.bias_change_cache)}")
 
         # Reset gradient caches
         self.weight_change_cache = np.zeros_like(self.weights)
@@ -166,11 +168,11 @@ class Flatten:
     def build(self, input_shape):   # nothing to initialize
         pass
 
-    def apply_changes(self, batch_size, learning_rate, optimizer):    # nothing to change
+    def apply_changes(self, batch_size, learning_rate, optimizer, clip_value):    # nothing to change
         pass
 
     def forprop(self, x):
         return x.reshape(self.output_shape)
 
-    def backprop(self, x, clip_value=None):
+    def backprop(self, x):
         return x.reshape(self.input_shape)

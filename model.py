@@ -3,6 +3,7 @@ import layers
 from progress_bar import ProgressBar
 from optimizers import Adam, NoOptimizer
 from matplotlib import pyplot as plt
+from pynput import keyboard
 
 
 class SequentialModel:
@@ -36,8 +37,6 @@ class SequentialModel:
             if layer.type not in ['flatten'] and optimizer not in ['none']:
                 self.optimizer_obj.fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
                 self.optimizer_obj.sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
-                self.optimizer_obj.prev_fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
-                self.optimizer_obj.prev_sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
 
             layer_num += 1
 
@@ -95,10 +94,16 @@ class SequentialModel:
             x = layer.forprop(x)
         return x
 
-    def backprop(self, output_gradient, clip_value=1):
+    def backprop(self, output_gradient):
+        average_gradients = []
+        average_gradient_size = []
         for layer in reversed(self.layers):
             # back propagates to accumulate weight/bias changes and outputs input gradient
-            output_gradient = layer.backprop(output_gradient, clip_value)
+            output_gradient = layer.backprop(output_gradient)
+            average_gradients.append(np.mean(output_gradient))
+            average_gradient_size.append(np.max(output_gradient)+np.abs(np.min(output_gradient))/2)
+
+        return np.mean(average_gradients), np.mean(average_gradient_size)
 
     def train(self, training_data, training_labels, epochs, batch_size, learning_rate, clip_value=0.5):
         progress = ProgressBar()
@@ -106,6 +111,9 @@ class SequentialModel:
         training_examples = training_data.shape[0]
         batches_per_epoch = training_examples // batch_size
         losses = []
+        gradients = []
+        gradient_sizes = []
+        running = True
 
         def shuffle_data(d, l):
             assert d.shape[0] == l.T.shape[0]
@@ -113,6 +121,8 @@ class SequentialModel:
             return d[p], l.T[p].T
 
         for epoch in range(epochs):
+            if not running:
+                break
             training_data, training_labels = shuffle_data(training_data, training_labels)
             for batch in range(batches_per_epoch):
                 labels = training_labels[:, batch * batch_size:(batch + 1) * batch_size]
@@ -123,17 +133,39 @@ class SequentialModel:
                 training_accuracy = np.sum(np.argmax(predictions, axis=0) == np.argmax(labels, axis=0))/batch_size
 
                 output_gradient = predictions-labels
-                self.backprop(output_gradient, clip_value)
+                average_gradient, average_gradient_size = self.backprop(output_gradient)   # does backprop and returns average gradients
 
+                gradients.append(average_gradient)
+                gradient_sizes.append(average_gradient_size)
                 losses.append(loss)
                 progress.update(epochs, batch+epoch*batches_per_epoch, batches_per_epoch, training_accuracy, loss)
 
                 for layer in self.layers:
-                    layer.apply_changes(batch_size, learning_rate, self.optimizer_obj)
+                    layer.apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
 
+                self.optimizer_obj.step += 1
         progress.end()
 
         x, y = np.arange(len(losses)), losses
         plt.plot(x, y, 'o')
         plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
+        plt.title("Average loss")
+        plt.ylabel("Average loss")
+        plt.xlabel("batch")
+        plt.show()
+
+        x, y = np.arange(len(gradients)), gradients
+        plt.plot(x, y, 'o')
+        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
+        plt.title("Average gradient")
+        plt.ylabel("Average gradient")
+        plt.xlabel("batch")
+        plt.show()
+
+        x, y = np.arange(len(gradient_sizes)), gradient_sizes
+        plt.plot(x, y, 'o')
+        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
+        plt.title("gradient size range")
+        plt.ylabel("gradient size range")
+        plt.xlabel("batch")
         plt.show()
