@@ -2,8 +2,9 @@ import numpy as np
 import layers
 from progress_bar import ProgressBar
 from optimizers import Adam, NoOptimizer
-from matplotlib import pyplot as plt
 from pynput import keyboard
+from tracking import MetricTracker
+from data import Data
 
 
 class SequentialModel:
@@ -14,7 +15,7 @@ class SequentialModel:
         self.loss_func = None
 
     @staticmethod
-    def get_optimizer(optimizer):
+    def get_optimizer(optimizer: str):
         match optimizer:
             case 'Adam':
                 return Adam()
@@ -41,7 +42,7 @@ class SequentialModel:
             input_shape = layer.output_shape
             layer_num += 1
 
-    def save(self, directory, file_name):
+    def save(self, directory: str, file_name: str):
         layer_data = {'layer_num': len(self.layers),
                       'optimizer': self.optimizer,
                       'optimizer_step': self.optimizer_obj.step,
@@ -61,12 +62,13 @@ class SequentialModel:
                 case 'flatten':
                     layer_data[f'layer{i}'] = 'flatten'
                     layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
+                    layer_data[f'layer{i}_output_shape'] = self.layers[i].output_shape
                 case _:
                     raise Exception(f'unsupported layer of type {self.layers[i].type}')
 
         np.savez_compressed(f'{directory}/{file_name}.npz', **layer_data)
 
-    def load(self, file_location):
+    def load(self, file_location: str):
         data = np.load(file_location, allow_pickle=True)
         self.layers = []
 
@@ -83,7 +85,8 @@ class SequentialModel:
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.activation_function = str(data[f'layer{i}_activation_func'])
                 case 'flatten':
-                    new_layer = layers.Flatten(data[f'layer{i}_input_shape'].tolist())
+                    new_layer = layers.Flatten(data[f'layer{i}_input_shape'].tolist(),
+                                               data[f'layer{i}_output_shape'].tolist())
                 case _:
                     raise Exception(f'unsupported layer type at layer {i}')
 
@@ -92,111 +95,65 @@ class SequentialModel:
         self.build(str(data['optimizer']), str(data['loss_func']))
         self.optimizer_obj.step = int(data['optimizer_step'])
 
-    def forprop(self, x):
+    def forprop(self, x: np.ndarray):
         for layer in self.layers:
             x = layer.forprop(x)
         return x
 
-    def backprop(self, output_gradient):
-        average_gradients = []
-        average_gradient_size = []
-        for layer in reversed(self.layers):
-            # back propagates to accumulate weight/bias changes and outputs input gradient
-            output_gradient = layer.backprop(output_gradient)
-            average_gradients.append(np.mean(output_gradient))
-            average_gradient_size.append(np.max(output_gradient)+np.abs(np.min(output_gradient))/2)
-
-        return np.mean(np.abs(average_gradients)), np.mean(average_gradient_size)
-
-    def train(self, training_data, training_labels, epochs, batch_size, learning_rate, clip_value=0.5):
+    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float,
+              tracker: MetricTracker):
         def on_press(key):
             try:
                 if key == keyboard.Key.f7:
                     nonlocal training
                     training = False
-                    print("\nF7 pressed. Exiting...")
                     return False
             except AttributeError:
                 pass
 
-        def shuffle_data(dta, lbl):
-            assert dta.shape[0] == lbl.T.shape[0]
-            p = np.random.permutation(dta.shape[0])
-            return dta[p], lbl.T[p].T
-
         listener = keyboard.Listener(on_press=on_press)
         listener.start()
-        progress = ProgressBar()
-        progress.start()
 
-        training_examples = training_data.shape[0]
-        batches_per_epoch = training_examples // batch_size
+        def backprop(output_gradient: np.ndarray):
+            for layer in reversed(self.layers):
+                # back propagates to accumulate weight/bias changes and outputs input gradient
+                output_gradient = layer.backprop(output_gradient)
+                tracker.bp_metrics_update(output_gradient, layer.input_cache)
 
-        losses = []
-        gradient_magnitude = []
-        gradient_extremes = []
-        activation_magnitude = []
+        progress_bar = ProgressBar()
+        progress_bar.start()
+        tracker.reset()
         training = True
 
+        batches_per_epoch = data.training_data.shape[0] // batch_size
         for epoch in range(epochs):
-            training_data, training_labels = shuffle_data(training_data, training_labels)
+            data.shuffle('training')
             for batch in range(batches_per_epoch):
-                # training data
-                labels = training_labels[:, batch * batch_size:(batch + 1) * batch_size]
-                data = training_data[batch * batch_size:(batch + 1) * batch_size]
+                # predictions and backprop
+                labels = data.training_labels[:, batch * batch_size:(batch + 1) * batch_size]
+                predictions = self.forprop(data.training_data[batch * batch_size:(batch + 1) * batch_size])
+                backprop(predictions - labels)
 
-                # predictions and losses
-                predictions = self.forprop(data)
-                output_gradient = predictions - labels
-                loss = -np.sum(labels * np.log(np.clip(predictions, 1e-7, 1 - 1e-7)))/batch_size
-                losses.append(loss)
-
-                # tracked metrics
-                training_accuracy = np.sum(np.argmax(predictions, axis=0) == np.argmax(labels, axis=0))/batch_size
-                average_gradient_magnitude, average_gradient_extreme = self.backprop(output_gradient)   # does backprop and returns average gradients
-                gradient_magnitude.append(average_gradient_magnitude)
-                gradient_extremes.append(average_gradient_extreme)
+                # default tracked metrics
+                loss = -np.sum(labels * np.log(np.clip(predictions, 1e-7, 1 - 1e-7))) / batch_size
+                training_accuracy = np.sum(np.argmax(predictions, axis=0) == np.argmax(labels, axis=0)) / batch_size
+                tracker.performance_metrics_update(loss, training_accuracy)
 
                 # applies changes and tracks activation magnitude
-                activation_m = []
-                for layer in self.layers:
-                    if layer.type not in ['flatten']:
-                        layer.apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
-                        activation_m.append(np.mean(np.abs(layer.unactivated_output_cache)))
-                activation_magnitude.append(np.mean(activation_m))
+                for i in range(len(self.layers)):
+                    if self.layers[i].type not in ['flatten']:
+                        self.layers[i].apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
 
-                # updates optimizer
+                progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy,
+                                    loss)
                 self.optimizer_obj.step += 1
 
-                # updates progress bar
                 if not training:
+                    print("\nF7 pressed. Exiting...")
                     break
-                progress.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss)
             else:
                 continue
             break
-        progress.end()
 
-        x, y = np.arange(len(losses)), losses
-        plt.plot(x, y, 'o')
-        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
-        plt.title("Average loss")
-        plt.show()
-
-        x, y = np.arange(len(gradient_magnitude)), gradient_magnitude
-        plt.plot(x, y, 'o')
-        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
-        plt.title("gradient_magnitude")
-        plt.show()
-
-        x, y = np.arange(len(gradient_extremes)), gradient_extremes
-        plt.plot(x, y, 'o')
-        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
-        plt.title("average gradient extreme")
-        plt.show()
-
-        x, y = np.arange(len(activation_magnitude)), activation_magnitude
-        plt.plot(x, y, 'o')
-        plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
-        plt.title("activation_magnitude")
-        plt.show()
+        progress_bar.end()
+        tracker.show()

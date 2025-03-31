@@ -4,7 +4,23 @@ from activationFunctions import ActivationFunction
 
 
 class Dense:
-    def __init__(self, size: int(), activation_function='relu', weight_initialization='He', bias_initialization='none'):
+    def __init__(self, size: int, activation_function='relu', weight_initialization='He', bias_initialization='none'):
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("Size must be a positive integer")
+
+        valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish', 'softmax']
+        if activation_function not in valid_activations:
+            raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
+
+        self._ACTIVATION_MAP = {
+            'relu': (ActivationFunction.relu, ActivationFunction.d_relu),
+            'sigmoid': (ActivationFunction.sigmoid, ActivationFunction.d_sigmoid),
+            'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
+            'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
+            'mish': (ActivationFunction.mish, ActivationFunction.d_mish),
+            'softmax': (ActivationFunction.softmax, ActivationFunction.d_softmax),
+        }
+
         self.type = 'dense'
         self.size = size
         self.input_shape = None
@@ -19,7 +35,6 @@ class Dense:
         self.activation_function = activation_function
 
         self.input_cache = None
-        self.activated_output_cache = None
         self.unactivated_output_cache = None
         self.weight_change_cache = None
         self.bias_change_cache = None
@@ -37,43 +52,13 @@ class Dense:
         self.bias_change_cache = np.zeros(shape=self.bias.shape)
 
     def get_activation_function(self):
-        match self.activation_function:
-            case 'relu':
-                return ActivationFunction.relu
-            case 'sigmoid':
-                return ActivationFunction.sigmoid
-            case 'tanh':
-                return ActivationFunction.tanh
-            case 'swish':
-                return ActivationFunction.swish
-            case 'mish':
-                return ActivationFunction.mish
-            case 'softmax':
-                return ActivationFunction.softmax
-            case _:
-                raise Exception(f"{self.activation_function} of type {type(self.activation_function)} not found or not "
-                                f"implemented. Maybe check spelling?")
+        return self._ACTIVATION_MAP[self.activation_function][0]
 
     def get_d_activation_function(self):
-        match self.activation_function:
-            case 'relu':
-                return ActivationFunction.d_relu
-            case 'sigmoid':
-                return ActivationFunction.d_sigmoid
-            case 'tanh':
-                return ActivationFunction.d_tanh
-            case 'swish':
-                return ActivationFunction.d_swish
-            case 'mish':
-                return ActivationFunction.d_mish
-            case 'softmax':
-                return ActivationFunction.d_softmax
-            case _:
-                raise Exception(f"{self.activation_function} of type {type(self.activation_function)} not found or not "
-                                f"implemented. Maybe check spelling?")
+        return self._ACTIVATION_MAP[self.activation_function][1]
 
     @staticmethod
-    def initialize_weights(initialization, input_size: int(), output_size: int()):
+    def initialize_weights(initialization: str, input_size: int, output_size: int):
         match initialization:
             case 'He' | 'Kaiming':
                 return np.random.normal(0, scale=np.sqrt(2 / input_size), size=(output_size, input_size))
@@ -85,7 +70,7 @@ class Dense:
                 raise Exception("initialization method not found or not implemented. Maybe check spelling?")
 
     @staticmethod
-    def initialize_bias(initialization, output_size: int()):
+    def initialize_bias(initialization: str, output_size: int):
         match initialization:
             case 'none':
                 return np.zeros((output_size, 1))
@@ -102,7 +87,7 @@ class Dense:
         self.unactivated_output_cache = activations[0]
         return activations[1]
 
-    def backprop(self, output_gradient):
+    def backprop(self, output_gradient: np.ndarray):
         assert self.input_cache is not None
         assert self.unactivated_output_cache is not None
 
@@ -123,7 +108,7 @@ class Dense:
 
         return d_i
 
-    def apply_changes(self, batch_size, lr, optimizer, clip_value):
+    def apply_changes(self, batch_size: int, lr: float, optimizer, clip_value: float):
         # Update weights and biases
         self.weight_change_cache /= batch_size
         self.bias_change_cache /= batch_size
@@ -146,12 +131,12 @@ class Flatten:
         self.input_shape = input_shape
         self.output_shape = output_shape
         self.input_cache = None
-        self.activated_output_cache = None
         self.unactivated_output_cache = None
 
     def forprop(self, x):
         self.input_cache = x
-        return x.reshape(self.output_shape)
+        self.unactivated_output_cache = x.reshape(self.output_shape)
+        return self.unactivated_output_cache
 
     def backprop(self, x):
         return x.reshape(self.input_shape)
