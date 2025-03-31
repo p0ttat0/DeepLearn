@@ -1,3 +1,4 @@
+add training monitoring module
 add multi thread
 add different loss function support (model output gradient, act funct derivatives)
 add Dropout

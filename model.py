@@ -162,8 +162,7 @@ class SequentialModel:
                 for layer in self.layers:
                     if layer.type not in ['flatten']:
                         layer.apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
-
-                        activation_m.append(np.mean(np.abs(layer.activated_output_cache)))
+                        activation_m.append(np.mean(np.abs(layer.unactivated_output_cache)))
                 activation_magnitude.append(np.mean(activation_m))
 
                 # updates optimizer

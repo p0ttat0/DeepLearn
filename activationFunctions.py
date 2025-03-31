@@ -35,7 +35,6 @@ class ActivationFunction:
         exp_x = np.exp(x - np.max(x))
         return exp_x / np.sum(exp_x, axis=0)
 
-    # derivatives assumes x is the output of activation function:
     @staticmethod
     @nb.njit(cache=True)
     def d_relu(x):
@@ -44,12 +43,14 @@ class ActivationFunction:
     @staticmethod
     @nb.njit(cache=True)
     def d_sigmoid(x):
-        return x * (1 - x)
+        activated = 1 / (1 + np.exp(-x))
+        return activated * (1 - activated)
 
     @staticmethod
     @nb.njit(cache=True)
     def d_tanh(x):
-        return 1 - np.square(x)
+        activated = np.tanh(x)
+        return 1 - np.square(activated)
 
     @staticmethod
     @nb.njit(cache=True)
