@@ -30,14 +30,15 @@ class SequentialModel:
         input_shape = self.layers[0].input_shape
         layer_num = 0
         for layer in self.layers:
-            layer.build(input_shape)
-            layer.layer_num = layer_num
+            if layer.type not in ['flatten']:
+                layer.build(input_shape)
+                layer.layer_num = layer_num
+
+                if optimizer == "Adam":
+                    self.optimizer_obj.fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
+                    self.optimizer_obj.sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
+
             input_shape = layer.output_shape
-
-            if layer.type not in ['flatten'] and optimizer not in ['none']:
-                self.optimizer_obj.fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
-                self.optimizer_obj.sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
-
             layer_num += 1
 
     def save(self, directory, file_name):
@@ -140,34 +141,41 @@ class SequentialModel:
         for epoch in range(epochs):
             training_data, training_labels = shuffle_data(training_data, training_labels)
             for batch in range(batches_per_epoch):
+                # training data
                 labels = training_labels[:, batch * batch_size:(batch + 1) * batch_size]
                 data = training_data[batch * batch_size:(batch + 1) * batch_size]
 
+                # predictions and losses
                 predictions = self.forprop(data)
                 output_gradient = predictions - labels
                 loss = -np.sum(labels * np.log(np.clip(predictions, 1e-7, 1 - 1e-7)))/batch_size
                 losses.append(loss)
 
+                # tracked metrics
                 training_accuracy = np.sum(np.argmax(predictions, axis=0) == np.argmax(labels, axis=0))/batch_size
                 average_gradient_magnitude, average_gradient_extreme = self.backprop(output_gradient)   # does backprop and returns average gradients
                 gradient_magnitude.append(average_gradient_magnitude)
                 gradient_extremes.append(average_gradient_extreme)
 
-                activation_average = []
+                # applies changes and tracks activation magnitude
+                activation_m = []
                 for layer in self.layers:
-                    activation_average.append(np.mean(np.abs(layer.activated_output_cache)))
-                    layer.apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
-                activation_magnitude.append(np.mean(activation_average))
+                    if layer.type not in ['flatten']:
+                        layer.apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
 
+                        activation_m.append(np.mean(np.abs(layer.activated_output_cache)))
+                activation_magnitude.append(np.mean(activation_m))
+
+                # updates optimizer
                 self.optimizer_obj.step += 1
 
+                # updates progress bar
                 if not training:
                     break
-
-                progress.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy,loss)
+                progress.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss)
             else:
-                break
-
+                continue
+            break
         progress.end()
 
         x, y = np.arange(len(losses)), losses

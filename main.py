@@ -8,10 +8,10 @@ training_data, training_labels, validation_data, validation_labels = Dataset.mni
 my_model = SequentialModel()
 
 my_model.layers = [
-    Flatten(input_shape=[-1, 28, 28]),
-    Dense(128, "sigmoid", 'Xavier'),
-    Dense(64, "relu", 'Xavier'),
-    Dense(10, 'softmax', 'Xavier'),
+    Flatten(input_shape=[-1, 28, 28], output_shape=[784, -1]),
+    Dense(128, "relu", 'He'),
+    Dense(64, "relu", 'He'),
+    Dense(10, 'softmax', 'He'),
 ]
 
 my_model.build(optimizer='Adam')
@@ -24,10 +24,10 @@ my_model.build(optimizer='Adam')
 
 my_model.train(
     training_data, training_labels,
-    epochs=5,
+    epochs=20,
     batch_size=128,
     learning_rate=0.01,
-    clip_value=2
+    clip_value=10
 )
 
-my_model.save('saved models', 'model1')
+# my_model.save('saved models', 'model1')

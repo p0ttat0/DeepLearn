@@ -7,7 +7,7 @@ class ActivationFunction:
     @staticmethod
     @nb.njit(cache=True)
     def relu(x):
-        return x * (x > 0)
+        return np.maximum(0, x)
 
     @staticmethod
     @nb.njit(cache=True)
@@ -39,7 +39,7 @@ class ActivationFunction:
     @staticmethod
     @nb.njit(cache=True)
     def d_relu(x):
-        return (x > 0).astype(np.float64)
+        return (x > 0).astype(np.int8)
 
     @staticmethod
     @nb.njit(cache=True)

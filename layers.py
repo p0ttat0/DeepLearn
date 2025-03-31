@@ -84,11 +84,11 @@ class Dense:
     def initialize_weights(initialization, input_size: int(), output_size: int()):
         match initialization:
             case 'He' | 'Kaiming':
-                return np.random.normal(0, np.sqrt(2 / input_size), (output_size, input_size))
+                return np.random.normal(0, scale=np.sqrt(2 / input_size), size=(output_size, input_size))
             case 'Xavier' | 'Glorot':
-                return np.random.normal(0, np.sqrt(2.0 / (input_size + output_size)), size=(output_size, input_size))
+                return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=(output_size, input_size))
             case 'LeCun':
-                return np.random.normal(0, np.sqrt(1 / input_size), (output_size, input_size))
+                return np.random.normal(0, scale=np.sqrt(1 / input_size), size=(output_size, input_size))
             case _:
                 raise Exception("initialization method not found or not implemented. Maybe check spelling?")
 
@@ -118,9 +118,9 @@ class Dense:
         @nb.njit(cache=True)
         def calculate_gradients(out_gradient, inputs, weights, activated_output, unactivated_output, act_func, d_act_func):
             match act_func:
-                case 'relu' | 'sigmoid' | 'tanh' | 'softmax':
+                case 'sigmoid' | 'tanh' | 'softmax':
                     dz = out_gradient * d_act_func(activated_output)
-                case 'swish' | 'mish':
+                case 'relu' | 'swish' | 'mish':
                     dz = out_gradient * d_act_func(unactivated_output)
                 case _:
                     raise Exception("activation function derivative error")
@@ -157,29 +157,17 @@ class Dense:
 
 
 class Flatten:
-    def __init__(self, input_shape: list):
+    def __init__(self, input_shape: list, output_shape: list):
         self.type = 'flatten'
         self.input_shape = input_shape
-        if len(input_shape) > 1:
-            self.output_shape = [int(np.prod(input_shape[-2:])), -1]
-        else:
-            self.output_shape = input_shape
+        self.output_shape = output_shape
         self.input_cache = None
         self.activated_output_cache = None
         self.unactivated_output_cache = None
 
-    def build(self, input_shape):   # nothing to initialize
-        pass
-
-    def apply_changes(self, batch_size, learning_rate, optimizer, clip_value):    # nothing to change
-        pass
-
     def forprop(self, x):
         self.input_cache = x
-        out = x.reshape(self.output_shape)
-        self.activated_output_cache = out
-        self.unactivated_output_cache = out
-        return out
+        return x.reshape(self.output_shape)
 
     def backprop(self, x):
         return x.reshape(self.input_shape)
