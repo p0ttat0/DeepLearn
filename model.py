@@ -98,12 +98,19 @@ class SequentialModel:
         self.build(str(data['optimizer']), str(data['loss_func']))
         self.optimizer_obj.step = int(data['optimizer_step'])
 
-    def forprop(self, x: np.ndarray):
+    def forprop(self, x: np.ndarray, mode='training'):
         for layer in self.layers:
+            if mode == 'testing' and layer.type in ['dropout']:
+                continue
             x = layer.forprop(x)
         return x
 
-    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float, tracker: MetricTracker, validation_freq=10, validation_sample_size=100):
+    def backprop(self, output_gradient: np.ndarray):
+        for layer in reversed(self.layers):
+            # back propagates to accumulate weight/bias changes and outputs input gradient
+            output_gradient = layer.backprop(output_gradient)
+
+    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float, tracker: MetricTracker, readout_freq=10, readout_sample_size=100):
         def on_press(key):
             try:
                 if key == keyboard.Key.f7:
@@ -116,13 +123,6 @@ class SequentialModel:
         listener = keyboard.Listener(on_press=on_press)
         listener.start()
 
-        def backprop(output_gradient: np.ndarray):
-            for layer in reversed(self.layers):
-                # back propagates to accumulate weight/bias changes and outputs input gradient
-                output_gradient = layer.backprop(output_gradient)
-                if layer.type not in ['reshape', 'dropout']:
-                    tracker.bp_metrics_update(output_gradient, layer.input_cache)
-
         progress_bar = ProgressBar()
         progress_bar.start()
         tracker.reset()
@@ -133,29 +133,33 @@ class SequentialModel:
             data.shuffle('training')
             for batch in range(batches_per_epoch):
                 # validation
-                if batch % validation_freq == 0:
-                    indexes = np.random.choice(np.arange(data.validation_labels.shape[0]), size = validation_sample_size, replace=False)
+                if batch % readout_freq == 0:
+                    indexes = np.random.choice(np.arange(data.validation_labels.shape[0]), size=readout_sample_size, replace=False)
                     validation_labels = data.validation_labels[indexes]
                     validation_data = data.validation_data[indexes]
-                    validation_predictions = self.forprop(validation_data)
-                    validation_loss = -np.sum(validation_labels * np.log(np.clip(validation_predictions, 1e-7, 1 - 1e-7))) / validation_sample_size
-                    validation_accuracy = np.sum(np.argmax(validation_predictions, axis=1) == np.argmax(validation_labels, axis=1)) / validation_sample_size
+                    validation_predictions = self.forprop(validation_data, mode='testing')
+                    validation_loss = -np.sum(validation_labels * np.log(np.clip(validation_predictions, 1e-7, 1 - 1e-7))) / readout_sample_size
+                    validation_accuracy = np.sum(np.argmax(validation_predictions, axis=1) == np.argmax(validation_labels, axis=1)) / readout_sample_size
 
                 # predictions and backprop
                 training_labels = data.training_labels[batch * batch_size:(batch + 1) * batch_size]
                 training_data = data.training_data[batch * batch_size:(batch + 1) * batch_size]
                 training_predictions = self.forprop(training_data)
-                backprop(training_predictions - training_labels)
+                self.backprop(training_predictions - training_labels)
 
-                # default tracked metrics
-                loss = -np.sum(training_labels * np.log(np.clip(training_predictions, 1e-7, 1 - 1e-7))) / batch_size
-                training_accuracy = np.sum(np.argmax(training_predictions, axis=1) == np.argmax(training_labels, axis=1)) / batch_size
+                # training metrics
+                indexes = np.random.choice(np.arange(training_data.shape[0]), size=readout_sample_size, replace=False)
+                training_predictions = self.forprop(training_data[indexes], mode='testing')  # rerun predictions without dropout
+                training_labels = training_labels[indexes]
+                loss = -np.sum(training_labels * np.log(np.clip(training_predictions, 1e-7, 1 - 1e-7))) / readout_sample_size
+                training_accuracy = np.sum(np.argmax(training_predictions, axis=1) == np.argmax(training_labels, axis=1)) / readout_sample_size
                 tracker.performance_metrics_update(loss, training_accuracy)
 
-                # applies changes and tracks activation magnitude
-                for i in range(len(self.layers)):
-                    if self.layers[i].type not in ['reshape', 'dropout']:
-                        self.layers[i].apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
+                # applies changes
+                for layer in self.layers:
+                    if layer.type not in ['reshape', 'dropout']:
+                        layer.apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
+                        tracker.training_metrics_update(layer.activation_magnitude, layer.activation_extremes, layer.output_gradient_magnitude, layer.output_gradient_extremes)
 
                 progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss, validation_loss, validation_accuracy)
                 self.optimizer_obj.step += 1
@@ -177,6 +181,6 @@ class SequentialModel:
             x = np.random.randint(0, data.shape[0])
             plt.imshow(data[x], cmap='viridis')
             plt.show()
-            prediction = self.forprop(data[x])
+            prediction = self.forprop(data[x], mode='testing')
             print(prediction)
             print("prediction: "+str(np.argmax(prediction, axis=1)[0])+"     label:"+str(np.argmax(labels[x], axis=0)))

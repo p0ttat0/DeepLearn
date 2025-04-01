@@ -4,36 +4,38 @@ from matplotlib import pyplot as plt
 
 class MetricTracker:
     def __init__(self, model, tracked: list):
+        # model performance
         self.training_accuracy = []
         self.training_losses = []
 
+        # training metrics
         self.gradient_magnitude = []
-        self.gradient_magnitude_cache = []
         self.gradient_extremes = []
-        self.gradient_extremes_cache = []
         self.activation_magnitude = []
+        self.activation_extremes = []
+        self.gradient_magnitude_cache = []
+        self.gradient_extremes_cache = []
         self.activation_magnitude_cache = []
+        self.activation_extremes_cache = []
 
         self.model = model
         self.tracked_metrics = tracked
-        self.total_layers = sum([1 for layer in model.layers if layer.type not in ['reshape', 'dropout']])
+        self.relevant_layers = sum([1 for layer in model.layers if layer.type not in ['reshape', 'dropout']])
 
-    def bp_metrics_update(self, output_gradient, activations):
-        if 'gradient magnitude' in self.tracked_metrics:
-            self.gradient_magnitude_cache.append(np.mean(np.abs(output_gradient)))
-            if len(self.gradient_magnitude_cache) == len(self.model.layers):
-                self.gradient_magnitude.append(np.mean(self.gradient_magnitude_cache))
-                self.gradient_magnitude_cache = []
-        if 'gradient extremes' in self.tracked_metrics:
-            self.gradient_extremes_cache.append(np.max(output_gradient) + np.abs(np.min(output_gradient)) / 2)
-            if len(self.gradient_extremes_cache) == len(self.model.layers):
-                self.gradient_extremes.append(np.mean(self.gradient_extremes_cache))
-                self.gradient_extremes_cache = []
-        if 'activation magnitude' in self.tracked_metrics:
-            self.activation_magnitude_cache.append(np.mean(np.abs(activations)))
-            if len(self.activation_magnitude_cache) == len(self.model.layers):
-                self.activation_magnitude.append(np.mean(self.activation_magnitude_cache))
-                self.activation_magnitude_cache = []
+    def training_metrics_update(self, activations_magnitude, activations_extremes, gradient_magnitude, gradient_extremes):
+        self.gradient_magnitude_cache.append(gradient_magnitude)
+        self.gradient_extremes_cache.append(gradient_extremes)
+        self.activation_magnitude_cache.append(activations_magnitude)
+        self.activation_extremes_cache.append(activations_extremes)
+        if len(self.gradient_magnitude_cache) == self.relevant_layers:
+            self.gradient_magnitude.append(np.mean(self.gradient_magnitude_cache))
+            self.gradient_extremes.append(np.mean(self.gradient_extremes_cache))
+            self.activation_magnitude.append(np.mean(self.activation_magnitude_cache))
+            self.activation_extremes.append(np.mean(self.activation_extremes_cache))
+            self.gradient_magnitude_cache = []
+            self.gradient_extremes_cache = []
+            self.activation_magnitude_cache = []
+            self.activation_extremes_cache = []
 
     def performance_metrics_update(self, loss, training_accuracy):
         self.training_accuracy.append(training_accuracy)
@@ -44,7 +46,8 @@ class MetricTracker:
                 'training losses': self.training_losses,
                 'gradient magnitude': self.gradient_magnitude,
                 'gradient extremes': self.gradient_extremes,
-                'activation magnitude': self.activation_magnitude
+                'activation magnitude': self.activation_magnitude,
+                'activation extremes': self.activation_extremes
                 }
         tracked = [temp[metric] for metric in self.tracked_metrics if metric in temp]
 

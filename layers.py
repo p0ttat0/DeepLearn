@@ -33,10 +33,17 @@ class Dense:
         self.bias_initialization = bias_initialization
         self.activation_function = activation_function
 
+        # back prop
         self.input_cache = None
         self.unactivated_output_cache = None
         self.weight_change_cache = None
         self.bias_change_cache = None
+
+        # metrics tracking
+        self.output_gradient_magnitude =[]
+        self.output_gradient_extremes = []
+        self.activation_magnitude = []
+        self.activation_extremes = []
 
     def build(self, input_shape: list):
         assert len(input_shape) < 3
@@ -65,6 +72,8 @@ class Dense:
                 return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=(input_size, output_size))
             case 'LeCun':
                 return np.random.normal(0, scale=np.sqrt(1.0 / input_size), size=(input_size, output_size))
+            case 'swish':
+                return np.random.normal(0, scale=1.1 / np.sqrt(input_size), size=(input_size, output_size))
             case _:
                 raise Exception("initialization method not found or not implemented. Maybe check spelling?")
 
@@ -79,6 +88,7 @@ class Dense:
         activated = self.get_activation_function()(unactivated)
         self.input_cache = x
         self.unactivated_output_cache = unactivated
+
         return activated
 
     def backprop(self, output_gradient: np.ndarray):
@@ -93,6 +103,12 @@ class Dense:
         # Accumulate gradients
         self.weight_change_cache += dw
         self.bias_change_cache += db
+
+        # metrics tracking
+        self.activation_magnitude = np.mean(np.abs(self.unactivated_output_cache))
+        self.activation_extremes = np.max(self.unactivated_output_cache) + np.abs(np.min(self.unactivated_output_cache)) / 2
+        self.output_gradient_magnitude = np.mean(np.abs(output_gradient))
+        self.output_gradient_extremes = np.max(output_gradient) + np.abs(np.min(output_gradient)) / 2
 
         return di
 
@@ -136,7 +152,7 @@ class Dropout:
         self.dropout_rate = dropout_rate
 
     def forprop(self, x):
-        binary_matrix = np.random.randint(100, size=x.shape) / 100 < (1 - self.dropout_rate)
+        binary_matrix = np.random.rand(*x.shape[1:]) <= (1 - self.dropout_rate)
         return x*binary_matrix/(1 - self.dropout_rate)
 
     @staticmethod

@@ -1,6 +1,5 @@
 add multi thread
 add different loss function support (model output gradient, act funct derivatives)
-add Dropout
 add batch norm
 add cnn layers
 add multi object detection
