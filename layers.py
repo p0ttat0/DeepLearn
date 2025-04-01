@@ -24,7 +24,7 @@ class Dense:
         self.type = 'dense'
         self.size = size
         self.input_shape = None
-        self.output_shape = [size]
+        self.output_shape = [-1, size]
         self.layer_num = None
 
         self.weights = None
@@ -44,7 +44,7 @@ class Dense:
         self.input_shape = input_shape
 
         if self.weights is None:
-            self.weights = self.initialize_weights(self.weight_initialization, input_shape[0], self.size)
+            self.weights = self.initialize_weights(self.weight_initialization, input_shape[1], self.size)
         if self.bias is None:
             self.bias = self.initialize_bias(self.bias_initialization, self.size)
 
@@ -61,11 +61,11 @@ class Dense:
     def initialize_weights(initialization: str, input_size: int, output_size: int):
         match initialization:
             case 'He' | 'Kaiming':
-                return np.random.normal(0, scale=np.sqrt(2 / input_size), size=(output_size, input_size))
+                return np.random.normal(0, scale=np.sqrt(2.0 / input_size), size=(input_size, output_size))
             case 'Xavier' | 'Glorot':
-                return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=(output_size, input_size))
+                return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=(input_size, output_size))
             case 'LeCun':
-                return np.random.normal(0, scale=np.sqrt(1 / input_size), size=(output_size, input_size))
+                return np.random.normal(0, scale=np.sqrt(1.0 / input_size), size=(input_size, output_size))
             case _:
                 raise Exception("initialization method not found or not implemented. Maybe check spelling?")
 
@@ -73,12 +73,12 @@ class Dense:
     def initialize_bias(initialization: str, output_size: int):
         match initialization:
             case 'none':
-                return np.zeros((output_size, 1))
+                return np.zeros((1, output_size))
 
     def forprop(self, x: np.ndarray):
-        @nb.njit(cache=True)
+        # # @nb.njit(cache=True)
         def forward(inpt: np.ndarray, weights: np.ndarray, bias: np.ndarray, act_func):
-            unactivated = np.dot(weights, inpt) + bias
+            unactivated = np.dot(inpt, weights) + bias
             activated = act_func(unactivated)
             return unactivated, activated
 
@@ -91,12 +91,12 @@ class Dense:
         assert self.input_cache is not None
         assert self.unactivated_output_cache is not None
 
-        @nb.njit(cache=True)
+        # @nb.njit(cache=True)
         def calculate_gradients(out_gradient, inputs, weights, unactivated_output, d_act_func):
             dz = out_gradient * d_act_func(unactivated_output)
-            dw = dz.dot(inputs.T)
-            db = np.sum(dz, axis=1).reshape(-1, 1)
-            di = weights.T.dot(dz)
+            dw = np.dot(inputs.T, dz)
+            db = np.sum(dz, axis=0, keepdims=True)
+            di = np.dot(dz, weights.T)
 
             return dw, db, di
 
@@ -125,9 +125,9 @@ class Dense:
         self.bias_change_cache = np.zeros_like(self.bias)
 
 
-class Flatten:
+class Reshape:
     def __init__(self, input_shape: list, output_shape: list):
-        self.type = 'flatten'
+        self.type = 'reshape'
         self.input_shape = input_shape
         self.output_shape = output_shape
         self.input_cache = None

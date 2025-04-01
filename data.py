@@ -12,10 +12,10 @@ class Data:
 
     def shuffle(self, target):
         if target == 'training':
-            assert self.training_data.shape[0] == self.training_labels.T.shape[0]
+            assert self.training_data.shape[0] == self.training_labels.shape[0]
             p = np.random.permutation(self.training_data.shape[0])
             self.training_data = self.training_data[p]
-            self.training_labels = self.training_labels.T[p].T
+            self.training_labels = self.training_labels[p]
 
 
 class Dataset:
@@ -33,7 +33,7 @@ class Dataset:
         f = gzip.open(training_labels_path, 'r')
         f.read(8)  # reads buffer
         img_labels = np.frombuffer(f.read(60000), dtype=np.uint8).astype(int)[:, np.newaxis]
-        img_labels = np.eye(10)[img_labels].squeeze().T  # one hot encoding
+        img_labels = np.eye(10)[img_labels].squeeze()  # one hot encoding
 
         f = gzip.open(test_data_path, 'r')
         f.read(16)  # reads buffer

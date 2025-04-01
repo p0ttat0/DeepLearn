@@ -31,7 +31,7 @@ class SequentialModel:
         input_shape = self.layers[0].input_shape
         layer_num = 0
         for layer in self.layers:
-            if layer.type not in ['flatten']:
+            if layer.type not in ['reshape']:
                 layer.build(input_shape)
                 layer.layer_num = layer_num
 
@@ -59,8 +59,8 @@ class SequentialModel:
                     layer_data[f'layer{i}_bias'] = self.layers[i].bias
                     layer_data[f'layer{i}_activation_func'] = self.layers[i].activation_function
                     layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
-                case 'flatten':
-                    layer_data[f'layer{i}'] = 'flatten'
+                case 'reshape':
+                    layer_data[f'layer{i}'] = 'reshape'
                     layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
                     layer_data[f'layer{i}_output_shape'] = self.layers[i].output_shape
                 case _:
@@ -84,8 +84,8 @@ class SequentialModel:
                     new_layer.weights = data[f'layer{i}_weights']
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.activation_function = str(data[f'layer{i}_activation_func'])
-                case 'flatten':
-                    new_layer = layers.Flatten(data[f'layer{i}_input_shape'].tolist(),
+                case 'reshape':
+                    new_layer = layers.Reshape(data[f'layer{i}_input_shape'].tolist(),
                                                data[f'layer{i}_output_shape'].tolist())
                 case _:
                     raise Exception(f'unsupported layer type at layer {i}')
@@ -130,22 +130,21 @@ class SequentialModel:
             data.shuffle('training')
             for batch in range(batches_per_epoch):
                 # predictions and backprop
-                labels = data.training_labels[:, batch * batch_size:(batch + 1) * batch_size]
+                labels = data.training_labels[batch * batch_size:(batch + 1) * batch_size]
                 predictions = self.forprop(data.training_data[batch * batch_size:(batch + 1) * batch_size])
                 backprop(predictions - labels)
 
                 # default tracked metrics
                 loss = -np.sum(labels * np.log(np.clip(predictions, 1e-7, 1 - 1e-7))) / batch_size
-                training_accuracy = np.sum(np.argmax(predictions, axis=0) == np.argmax(labels, axis=0)) / batch_size
+                training_accuracy = np.sum(np.argmax(predictions, axis=1) == np.argmax(labels, axis=1)) / batch_size
                 tracker.performance_metrics_update(loss, training_accuracy)
 
                 # applies changes and tracks activation magnitude
                 for i in range(len(self.layers)):
-                    if self.layers[i].type not in ['flatten']:
+                    if self.layers[i].type not in ['reshape']:
                         self.layers[i].apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
 
-                progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy,
-                                    loss)
+                progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss)
                 self.optimizer_obj.step += 1
 
                 if not training:
@@ -157,3 +156,12 @@ class SequentialModel:
 
         progress_bar.end()
         tracker.show()
+
+    def test(self, data: np.ndarray, labels: np.ndarray, iterations):
+        import matplotlib.pyplot as plt
+
+        for i in range(iterations):
+            x = np.random.randint(0, data.shape[0])
+            plt.imshow(data[x], cmap='viridis')
+            plt.show()
+            print("prediction: "+str(np.argmax(self.forprop(data[x]), axis=1)[0])+"     label:"+str(np.argmax(labels[x], axis=0)))
