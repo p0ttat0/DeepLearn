@@ -100,8 +100,7 @@ class SequentialModel:
             x = layer.forprop(x)
         return x
 
-    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float,
-              tracker: MetricTracker):
+    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float, tracker: MetricTracker, validation_freq=10, validation_sample_size=100):
         def on_press(key):
             try:
                 if key == keyboard.Key.f7:
@@ -129,14 +128,24 @@ class SequentialModel:
         for epoch in range(epochs):
             data.shuffle('training')
             for batch in range(batches_per_epoch):
+                # validation
+                if batch % validation_freq == 0:
+                    indexes = np.random.choice(np.arange(data.validation_labels.shape[0]), size = validation_sample_size, replace=False)
+                    validation_labels = data.validation_labels[indexes]
+                    validation_data = data.validation_data[indexes]
+                    validation_predictions = self.forprop(validation_data)
+                    validation_loss = -np.sum(validation_labels * np.log(np.clip(validation_predictions, 1e-7, 1 - 1e-7))) / validation_sample_size
+                    validation_accuracy = np.sum(np.argmax(validation_predictions, axis=1) == np.argmax(validation_labels, axis=1)) / validation_sample_size
+
                 # predictions and backprop
-                labels = data.training_labels[batch * batch_size:(batch + 1) * batch_size]
-                predictions = self.forprop(data.training_data[batch * batch_size:(batch + 1) * batch_size])
-                backprop(predictions - labels)
+                training_labels = data.training_labels[batch * batch_size:(batch + 1) * batch_size]
+                training_data = data.training_data[batch * batch_size:(batch + 1) * batch_size]
+                training_predictions = self.forprop(training_data)
+                backprop(training_predictions - training_labels)
 
                 # default tracked metrics
-                loss = -np.sum(labels * np.log(np.clip(predictions, 1e-7, 1 - 1e-7))) / batch_size
-                training_accuracy = np.sum(np.argmax(predictions, axis=1) == np.argmax(labels, axis=1)) / batch_size
+                loss = -np.sum(training_labels * np.log(np.clip(training_predictions, 1e-7, 1 - 1e-7))) / batch_size
+                training_accuracy = np.sum(np.argmax(training_predictions, axis=1) == np.argmax(training_labels, axis=1)) / batch_size
                 tracker.performance_metrics_update(loss, training_accuracy)
 
                 # applies changes and tracks activation magnitude
@@ -144,7 +153,7 @@ class SequentialModel:
                     if self.layers[i].type not in ['reshape']:
                         self.layers[i].apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
 
-                progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss)
+                progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss, validation_loss, validation_accuracy)
                 self.optimizer_obj.step += 1
 
                 if not training:

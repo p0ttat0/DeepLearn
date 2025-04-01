@@ -15,7 +15,7 @@ class ProgressBar:
         hours, minutes = divmod(minutes, 60)
         print(f'\n\ntimed elapsed: {hours:.0f}:{minutes:.0f}:{seconds:.0f}')
 
-    def update(self, epochs, batches_completed, batches_per_epoch, training_accuracy, loss, bar_length=50):
+    def update(self, epochs, batches_completed, batches_per_epoch, training_accuracy, loss, validation_loss, validation_accuracy, bar_length=50):
         now = time.time()
         time_elapsed = now - self.start_time
         total_batches = epochs * batches_per_epoch
@@ -40,9 +40,11 @@ class ProgressBar:
             avr_epoch_time_seconds, avr_epoch_time_minutes, avr_epoch_time_hours = 0, 0, 0
 
         print(
-            f'\rprogress: [{filled}{spaces}] |{(percent * 100):.2f}%|      '
+            f'\rprogress: [{filled}{spaces}] |{(percent * 100):.2f}%|     '
             f'loss: {loss:.7f}     '
-            f'training_accuracy: {training_accuracy*100:.2f}%     '
+            f'accuracy: {training_accuracy*100:.0f}%     '
+            f'V_loss: {validation_loss:.7f}     '
+            f'V_accuracy: {validation_accuracy*100:.0f}%     '
             f'time left est: |{round(time_est_hours):02d}:{round(time_est_minutes):02d}:{round(time_est_seconds):02d}|     '
-            f'average time/epoch: |{round(avr_epoch_time_hours):02d}:{round(avr_epoch_time_minutes):02d}:{round(avr_epoch_time_seconds):02d}|',
+            f'time/epoch: |{round(avr_epoch_time_hours):02d}:{round(avr_epoch_time_minutes):02d}:{round(avr_epoch_time_seconds):02d}|',
             end='')

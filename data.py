@@ -16,6 +16,11 @@ class Data:
             p = np.random.permutation(self.training_data.shape[0])
             self.training_data = self.training_data[p]
             self.training_labels = self.training_labels[p]
+        if target == 'validation':
+            assert self.validation_data.shape[0] == self.validation_labels.shape[0]
+            p = np.random.permutation(self.validation_data.shape[0])
+            self.validation_data = self.validation_data[p]
+            self.validation_labels = self.validation_labels[p]
 
 
 class Dataset:
