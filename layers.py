@@ -76,37 +76,26 @@ class Dense:
                 return np.zeros((1, output_size))
 
     def forprop(self, x: np.ndarray):
-        # # @nb.njit(cache=True)
-        def forward(inpt: np.ndarray, weights: np.ndarray, bias: np.ndarray, act_func):
-            unactivated = np.dot(inpt, weights) + bias
-            activated = act_func(unactivated)
-            return unactivated, activated
-
-        activations = forward(x, self.weights, self.bias, self.get_activation_function())
+        unactivated = np.dot(x, self.weights) + self.bias
+        activated = self.get_activation_function()(unactivated)
         self.input_cache = x
-        self.unactivated_output_cache = activations[0]
-        return activations[1]
+        self.unactivated_output_cache = unactivated
+        return activated
 
     def backprop(self, output_gradient: np.ndarray):
         assert self.input_cache is not None
         assert self.unactivated_output_cache is not None
 
-        # @nb.njit(cache=True)
-        def calculate_gradients(out_gradient, inputs, weights, unactivated_output, d_act_func):
-            dz = out_gradient * d_act_func(unactivated_output)
-            dw = np.dot(inputs.T, dz)
-            db = np.sum(dz, axis=0, keepdims=True)
-            di = np.dot(dz, weights.T)
-
-            return dw, db, di
-
-        d_w, d_b, d_i = calculate_gradients(output_gradient, self.input_cache, self.weights, self.unactivated_output_cache, self.get_d_activation_function())
+        dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
+        dw = np.dot(self.input_cache.T, dz)
+        db = np.sum(dz, axis=0, keepdims=True)
+        di = np.dot(dz, self.weights.T)
 
         # Accumulate gradients
-        self.weight_change_cache += d_w
-        self.bias_change_cache += d_b
+        self.weight_change_cache += dw
+        self.bias_change_cache += db
 
-        return d_i
+        return di
 
     def apply_changes(self, batch_size: int, lr: float, optimizer, clip_value: float):
         # Update weights and biases
