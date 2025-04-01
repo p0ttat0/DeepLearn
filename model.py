@@ -28,18 +28,17 @@ class SequentialModel:
         self.optimizer = optimizer
         self.optimizer_obj = self.get_optimizer(optimizer)
         self.loss_func = loss_func
-        input_shape = self.layers[0].input_shape
+        input_shape = self.layers[0].output_shape
         layer_num = 0
         for layer in self.layers:
-            if layer.type not in ['reshape']:
+            if layer.type not in ['reshape', 'dropout']:
                 layer.build(input_shape)
                 layer.layer_num = layer_num
 
                 if optimizer == "Adam":
                     self.optimizer_obj.fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
                     self.optimizer_obj.sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
-
-            input_shape = layer.output_shape
+                input_shape = layer.output_shape
             layer_num += 1
 
     def save(self, directory: str, file_name: str):
@@ -63,6 +62,9 @@ class SequentialModel:
                     layer_data[f'layer{i}'] = 'reshape'
                     layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
                     layer_data[f'layer{i}_output_shape'] = self.layers[i].output_shape
+                case 'dropout':
+                    layer_data[f'layer{i}'] = 'dropout'
+                    layer_data[f'layer{i}_dropout_rate'] = self.layers[i].dropout_rate
                 case _:
                     raise Exception(f'unsupported layer of type {self.layers[i].type}')
 
@@ -85,8 +87,9 @@ class SequentialModel:
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.activation_function = str(data[f'layer{i}_activation_func'])
                 case 'reshape':
-                    new_layer = layers.Reshape(data[f'layer{i}_input_shape'].tolist(),
-                                               data[f'layer{i}_output_shape'].tolist())
+                    new_layer = layers.Reshape(data[f'layer{i}_input_shape'].tolist(), data[f'layer{i}_output_shape'].tolist())
+                case 'dropout':
+                    new_layer = layers.Dropout(float(data[f'layer{i}_dropout_rate']))
                 case _:
                     raise Exception(f'unsupported layer type at layer {i}')
 
@@ -117,7 +120,8 @@ class SequentialModel:
             for layer in reversed(self.layers):
                 # back propagates to accumulate weight/bias changes and outputs input gradient
                 output_gradient = layer.backprop(output_gradient)
-                tracker.bp_metrics_update(output_gradient, layer.input_cache)
+                if layer.type not in ['reshape', 'dropout']:
+                    tracker.bp_metrics_update(output_gradient, layer.input_cache)
 
         progress_bar = ProgressBar()
         progress_bar.start()
@@ -150,7 +154,7 @@ class SequentialModel:
 
                 # applies changes and tracks activation magnitude
                 for i in range(len(self.layers)):
-                    if self.layers[i].type not in ['reshape']:
+                    if self.layers[i].type not in ['reshape', 'dropout']:
                         self.layers[i].apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
 
                 progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss, validation_loss, validation_accuracy)

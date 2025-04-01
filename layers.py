@@ -1,4 +1,3 @@
-import numba as nb
 import numpy as np
 from activationFunctions import ActivationFunction
 
@@ -129,3 +128,17 @@ class Reshape:
 
     def backprop(self, x):
         return x.reshape(self.input_shape)
+
+
+class Dropout:
+    def __init__(self, dropout_rate):
+        self.type = 'dropout'
+        self.dropout_rate = dropout_rate
+
+    def forprop(self, x):
+        binary_matrix = np.random.randint(100, size=x.shape) / 100 < (1 - self.dropout_rate)
+        return x*binary_matrix/(1 - self.dropout_rate)
+
+    @staticmethod
+    def backprop(output_gradient):
+        return output_gradient

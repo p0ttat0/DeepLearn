@@ -15,20 +15,21 @@ class MetricTracker:
         self.activation_magnitude_cache = []
 
         self.model = model
-        self.tracked = tracked
+        self.tracked_metrics = tracked
+        self.total_layers = sum([1 for layer in model.layers if layer.type not in ['reshape', 'dropout']])
 
     def bp_metrics_update(self, output_gradient, activations):
-        if 'gradient magnitude' in self.tracked:
+        if 'gradient magnitude' in self.tracked_metrics:
             self.gradient_magnitude_cache.append(np.mean(np.abs(output_gradient)))
             if len(self.gradient_magnitude_cache) == len(self.model.layers):
                 self.gradient_magnitude.append(np.mean(self.gradient_magnitude_cache))
                 self.gradient_magnitude_cache = []
-        if 'gradient extremes' in self.tracked:
+        if 'gradient extremes' in self.tracked_metrics:
             self.gradient_extremes_cache.append(np.max(output_gradient) + np.abs(np.min(output_gradient)) / 2)
             if len(self.gradient_extremes_cache) == len(self.model.layers):
                 self.gradient_extremes.append(np.mean(self.gradient_extremes_cache))
                 self.gradient_extremes_cache = []
-        if 'activation magnitude' in self.tracked:
+        if 'activation magnitude' in self.tracked_metrics:
             self.activation_magnitude_cache.append(np.mean(np.abs(activations)))
             if len(self.activation_magnitude_cache) == len(self.model.layers):
                 self.activation_magnitude.append(np.mean(self.activation_magnitude_cache))
@@ -45,16 +46,16 @@ class MetricTracker:
                 'gradient extremes': self.gradient_extremes,
                 'activation magnitude': self.activation_magnitude
                 }
-        tracked = [temp[metric] for metric in self.tracked if metric in temp]
+        tracked = [temp[metric] for metric in self.tracked_metrics if metric in temp]
 
-        assert len(tracked) == len(self.tracked)
+        assert len(tracked) == len(self.tracked_metrics)
 
-        for i in range(len(self.tracked)):
+        for i in range(len(self.tracked_metrics)):
             x, y = np.arange(len(tracked[i])), tracked[i]
             plt.plot(x, y, 'o')
             if len(tracked[i]) > 1:
                 plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
-            plt.title(self.tracked[i])
+            plt.title(self.tracked_metrics[i])
             plt.show()
 
     def reset(self):
