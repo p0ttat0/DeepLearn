@@ -164,4 +164,6 @@ class SequentialModel:
             x = np.random.randint(0, data.shape[0])
             plt.imshow(data[x], cmap='viridis')
             plt.show()
-            print("prediction: "+str(np.argmax(self.forprop(data[x]), axis=1)[0])+"     label:"+str(np.argmax(labels[x], axis=0)))
+            prediction = self.forprop(data[x])
+            print(prediction)
+            print("prediction: "+str(np.argmax(prediction, axis=1)[0])+"     label:"+str(np.argmax(labels[x], axis=0)))

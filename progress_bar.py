@@ -41,8 +41,8 @@ class ProgressBar:
 
         print(
             f'\rprogress: [{filled}{spaces}] |{(percent * 100):.2f}%|      '
-            f'loss: {loss:.4f}     '
-            f'training_accuracy: {round(training_accuracy*100):02d}%     '
+            f'loss: {loss:.7f}     '
+            f'training_accuracy: {training_accuracy*100:.2f}%     '
             f'time left est: |{round(time_est_hours):02d}:{round(time_est_minutes):02d}:{round(time_est_seconds):02d}|     '
             f'average time/epoch: |{round(avr_epoch_time_hours):02d}:{round(avr_epoch_time_minutes):02d}:{round(avr_epoch_time_seconds):02d}|',
             end='')
