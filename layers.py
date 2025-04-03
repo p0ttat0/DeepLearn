@@ -47,7 +47,7 @@ class Convolution:
     @staticmethod
     def conv2d_gemm(x, kernel, bias, stride=1, padding='same', dtype=np.float32):
         @njit(parallel=True, fastmath=True, cache=True)
-        def pad_input_numba(x, pad_h, pad_w):
+        def pad_input(x, pad_h, pad_w):
             """NHWC padding optimized with Numba. 2.5x faster than numpy.pad."""
             batch, in_h, in_w, channels = x.shape
             padded = np.zeros((batch, in_h + 2 * pad_h, in_w + 2 * pad_w, channels), dtype=x.dtype)
@@ -80,12 +80,12 @@ class Convolution:
 
         # --- Padding ---
         if padding == 'same':
-            pad_h = (kernel_height - 1) // 2
-            pad_w = (kernel_width - 1) // 2
+            padding_height = (kernel_height - 1) // 2
+            padding_width = (kernel_width - 1) // 2
         else:
-            pad_h = pad_w = 0
+            padding_height = padding_width = 0
 
-        padded_input = pad_input_numba(x, pad_h, pad_w)
+        padded_input = pad_input(x, padding_height, padding_width)
         height_pad, width_pad = padded_input.shape[1], padded_input.shape[2]
 
         # --- Output Dimensions ---
@@ -106,7 +106,7 @@ class Convolution:
 
         # Shape: (batchsize, output_height, output_width, kernel_height, kernel_width, input_channels)
         windows = as_strided(
-            input_padded,
+            padded_input,
             shape=(batchsize, output_height, output_width, kernel_height, kernel_width, input_channels),
             strides=strides,
             writeable=False
@@ -115,13 +115,13 @@ class Convolution:
         # --- GEMM Preparation ---
         # Reshape to (batchsize*output_height*output_width, kernel_height*kernel_width*input_channels) without copying
         # Force C-contiguous for BLAS (critical for performance)
-        X_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
-        W_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')  # Fortran-order for BLAS
+        x_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
+        w_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')  # Fortran-order for BLAS
 
         # --- BLAS-Accelerated GEMM ---
-        # Equivalent to: output = (X_col @ W_col) + bias
+        # Equivalent to: output = (x_col @ w_col) + bias
         # Use np.dot with contiguous arrays for MKL/OpenBLAS acceleration
-        output = np.dot(X_col, W_col).astype(dtype, copy=False)
+        output = np.dot(x_col, w_col).astype(dtype, copy=False)
         output += bias.reshape(1, -1)  # In-place broadcasted add
 
         # --- Final Reshape ---
