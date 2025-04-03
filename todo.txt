@@ -3,6 +3,7 @@ add different loss function support (model output gradient, act funct derivative
 add batch norm
 add cnn layers
 add multi object detection
+add generic data loading
 
 look into
 Stochastic Weight Averaging

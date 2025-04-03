@@ -50,3 +50,7 @@ class Dataset:
 
         return Data(img_data.reshape((60000, 28, 28)), img_labels, testing_data.reshape((10000, 28, 28)),
                     testing_labels)
+
+    @staticmethod
+    def load_generic(training_data_path, training_labels_path,validation_data_path, validation_labels_path):
+        pass
