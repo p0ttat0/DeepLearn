@@ -5,82 +5,118 @@ from numba import njit, prange
 
 
 class Convolution:
-    @njit(parallel=True, fastmath=True, cache=True)
-    def pad_input_numba(input, pad_h, pad_w):
-        """NHWC padding optimized with Numba. 2.5x faster than numpy.pad."""
-        batch, in_h, in_w, channels = input.shape
-        padded = np.zeros((batch, in_h + 2 * pad_h, in_w + 2 * pad_w, channels), dtype=input.dtype)
+    def __init__(self, kernel_size: int, activation_function='relu', kernel_initialization='He', bias_initialization='none'):
+        valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish', 'softmax']
+        if activation_function not in valid_activations:
+            raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
 
-        for b in prange(batch):
-            for c in prange(channels):
-                padded[b, pad_h:pad_h + in_h, pad_w:pad_w + in_w, c] = input[b, :, :, c]
-        return padded
+        self._ACTIVATION_MAP = {
+            'relu': (ActivationFunction.relu, ActivationFunction.d_relu),
+            'sigmoid': (ActivationFunction.sigmoid, ActivationFunction.d_sigmoid),
+            'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
+            'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
+            'mish': (ActivationFunction.mish, ActivationFunction.d_mish),
+            'softmax': (ActivationFunction.softmax, ActivationFunction.d_softmax),
+        }
+
+        self.type = 'convolutional'
+        self.size = kernel_size
+        self.input_shape = None
+        self.output_shape = None
+
+        self.weights = None
+        self.bias = None
+
+        self.kernel_initialization = kernel_initialization
+        self.bias_initialization = bias_initialization
+        self.activation_function = activation_function
+
+        # back prop
+        self.layer_num = None
+        self.input_cache = None
+        self.unactivated_output_cache = None
+        self.kernel_change_cache = None
+        self.bias_change_cache = None
+
+        # metrics tracking
+        self.output_gradient_magnitude = []
+        self.output_gradient_extremes = []
+        self.activation_magnitude = []
+        self.activation_extremes = []
 
     @staticmethod
-    def conv2d_gemm(input, kernel, bias, stride=1, padding='same', dtype=np.float32):
-        """
-        Hyper-optimized Conv2D via as_strided + GEMM.
+    def conv2d_gemm(x, kernel, bias, stride=1, padding='same', dtype=np.float32):
+        @njit(parallel=True, fastmath=True, cache=True)
+        def pad_input_numba(x, pad_h, pad_w):
+            """NHWC padding optimized with Numba. 2.5x faster than numpy.pad."""
+            batch, in_h, in_w, channels = x.shape
+            padded = np.zeros((batch, in_h + 2 * pad_h, in_w + 2 * pad_w, channels), dtype=x.dtype)
 
+            for b in prange(batch):
+                for c in prange(channels):
+                    padded[b, pad_h:pad_h + in_h, pad_w:pad_w + in_w, c] = x[b, :, :, c]
+            return padded
+        """
         Args:
-            input  : (B, H, W, C_in)
-            kernel : (KH, KW, C_in, C_out)
-            bias   : (C_out,)
+            x  : (batchsize, height, width, input_channels)
+            kernel : (kernel_height, kernel_width, input_channels, output_channels)
+            bias   : (output_channels,)
             stride : Stride for height/width
             padding: 'same' or 'valid'
             dtype  : Output dtype (float32 recommended)
 
         Returns:
-            output : (B, H_out, W_out, C_out)
+            output : (batchsize, output_height, output_width, output_channels)
         """
         # --- Pre-checks ---
-        input = np.ascontiguousarray(input)
+        x = np.ascontiguousarray(x)
         kernel = np.ascontiguousarray(kernel)
         bias = np.ascontiguousarray(bias)
 
         # --- Dimensions ---
-        B, H, W, C_in = input.shape
-        KH, KW, _, C_out = kernel.shape
+        batchsize, height, width, input_channels = x.shape
+        kernel_height, kernel_width, _, output_channels = kernel.shape
         stride = (stride, stride) if isinstance(stride, int) else stride
 
         # --- Padding ---
         if padding == 'same':
-            pad_h = (KH - 1) // 2
-            pad_w = (KW - 1) // 2
+            pad_h = (kernel_height - 1) // 2
+            pad_w = (kernel_width - 1) // 2
         else:
             pad_h = pad_w = 0
 
-        input_padded = pad_input_numba(input, pad_h, pad_w)
-        H_pad, W_pad = input_padded.shape[1], input_padded.shape[2]
+        padded_input = pad_input_numba(x, pad_h, pad_w)
+        height_pad, width_pad = padded_input.shape[1], padded_input.shape[2]
 
         # --- Output Dimensions ---
-        H_out = (H_pad - KH) // stride[0] + 1
-        W_out = (W_pad - KW) // stride[1] + 1
+        output_height = (height_pad - kernel_height) // stride[0] + 1
+        output_width = (width_pad - kernel_width) // stride[1] + 1
 
         # --- as_strided Magic ---
         # Key Insight: Compute strides manually to avoid numpy's generic stride calc
-        s_b, s_h, s_w, s_c = input_padded.strides
+        s_b, s_h, s_w, s_c = padded_input.strides
         strides = (
             s_b,  # Batch stride
-            s_h * stride[0],  # H stride (jump by stride)
-            s_w * stride[1],  # W stride (jump by stride)
-            s_h,  # KH stride
-            s_w,  # KW stride
+            s_h * stride[0],  # height stride (jump by stride)
+            s_w * stride[1],  # width stride (jump by stride)
+            s_h,  # kernel_height stride
+            s_w,  # kernel_width stride
             s_c  # Channel stride
         )
 
-        # Shape: (B, H_out, W_out, KH, KW, C_in)
+        # Shape: (batchsize, output_height, output_width, kernel_height, kernel_width, input_channels)
         windows = as_strided(
             input_padded,
-            shape=(B, H_out, W_out, KH, KW, C_in),
+            shape=(batchsize, output_height, output_width, kernel_height, kernel_width, input_channels),
             strides=strides,
             writeable=False
         )
 
         # --- GEMM Preparation ---
-        # Reshape to (B*H_out*W_out, KH*KW*C_in) without copying
+        # Reshape to (batchsize*output_height*output_width, kernel_height*kernel_width*input_channels) without copying
         # Force C-contiguous for BLAS (critical for performance)
-        X_col = np.reshape(windows, (B * H_out * W_out, KH * KW * C_in), order='C')
-        W_col = np.reshape(kernel, (KH * KW * C_in, C_out), order='F')  # Fortran-order for BLAS
+        X_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
+        W_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')  # Fortran-order for BLAS
 
         # --- BLAS-Accelerated GEMM ---
         # Equivalent to: output = (X_col @ W_col) + bias
@@ -89,7 +125,8 @@ class Convolution:
         output += bias.reshape(1, -1)  # In-place broadcasted add
 
         # --- Final Reshape ---
-        return output.reshape(B, H_out, W_out, C_out)
+        return output.reshape(batchsize, output_height, output_width, output_channels)
+
 
 class Dense:
     def __init__(self, size: int, activation_function='relu', weight_initialization='He', bias_initialization='none'):
@@ -113,7 +150,6 @@ class Dense:
         self.size = size
         self.input_shape = None
         self.output_shape = [-1, size]
-        self.layer_num = None
 
         self.weights = None
         self.bias = None
@@ -123,13 +159,14 @@ class Dense:
         self.activation_function = activation_function
 
         # back prop
+        self.layer_num = None
         self.input_cache = None
         self.unactivated_output_cache = None
         self.weight_change_cache = None
         self.bias_change_cache = None
 
         # metrics tracking
-        self.output_gradient_magnitude =[]
+        self.output_gradient_magnitude = []
         self.output_gradient_extremes = []
         self.activation_magnitude = []
         self.activation_extremes = []
@@ -206,12 +243,10 @@ class Dense:
         self.weight_change_cache /= batch_size
         self.bias_change_cache /= batch_size
 
-        weight_change, bias_change = optimizer.adjust_lr(self.layer_num, self.weight_change_cache, self.bias_change_cache, lr)
+        weight_change, bias_change = optimizer.adjust_gradient(self.layer_num, self.weight_change_cache, self.bias_change_cache, lr)
 
         self.weights -= np.clip(weight_change, -clip_value, clip_value)
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
-
-        # print(f"Layer {self.layer_num}: Weight grad mean={np.mean(self.weight_change_cache)}, Bias grad mean={np.mean(self.bias_change_cache)}")
 
         # Reset gradient caches
         self.weight_change_cache = np.zeros_like(self.weights)

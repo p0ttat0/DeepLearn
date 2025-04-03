@@ -10,7 +10,7 @@ class Adam:
         self.fme = {}  # First moment estimate
         self.sme = {}  # Second moment estimate
 
-    def adjust_lr(self, layer, weight_gradient, bias_gradient, learning_rate):
+    def adjust_gradient(self, layer, weight_gradient, bias_gradient, learning_rate):
         if layer not in self.fme:
             # Initialize moments for this layer
             self.fme[layer] = [np.zeros_like(weight_gradient), np.zeros_like(bias_gradient)]
@@ -40,5 +40,5 @@ class NoOptimizer:
         self.step = 1
 
     @staticmethod
-    def adjust_lr(layer, weight_gradient, bias_gradient, learning_rate):
+    def adjust_gradient(layer, weight_gradient, bias_gradient, learning_rate):
         return weight_gradient*learning_rate, bias_gradient*learning_rate
