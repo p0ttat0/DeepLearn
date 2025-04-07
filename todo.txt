@@ -1,13 +1,14 @@
-add multi thread
-add different loss function support (model output gradient, act funct derivatives)
-add batch norm
+todo
 add cnn layers
-add multi object detection
+Quantization/ Mixed Precision Training
+add different loss function support (model output gradient, act funct derivatives)
+add multi thread
 add generic data loading
+add batch norm
+add multi object detection
 
 look into
 Stochastic Weight Averaging
-Mixed Precision Training
 Label Smoothing
 Early Stopping
 L1/L2 Regularization

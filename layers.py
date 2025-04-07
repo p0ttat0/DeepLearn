@@ -5,8 +5,12 @@ from numba import njit, prange
 
 
 class Convolution:
+    """ input_tensor  : (batchsize, height, width, input_channels)
+        kernel : (kernel_height, kernel_width, input_channels, output_channels)
+        bias   : (output_channels,)
+    """
     def __init__(self, kernel_size: int, activation_function='relu', kernel_initialization='He', bias_initialization='none'):
-        valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish', 'softmax']
+        valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish']
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
 
@@ -16,7 +20,6 @@ class Convolution:
             'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
             'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
             'mish': (ActivationFunction.mish, ActivationFunction.d_mish),
-            'softmax': (ActivationFunction.softmax, ActivationFunction.d_softmax),
         }
 
         self.type = 'convolutional'
@@ -45,9 +48,9 @@ class Convolution:
         self.activation_extremes = []
 
     @staticmethod
-    def conv2d_gemm(x, kernel, bias, stride=1, padding='same', dtype=np.float32):
+    def conv2d_gemm(input_tensor, kernel, bias, stride=1, padding='same', dtype=np.float32):
         @njit(parallel=True, fastmath=True, cache=True)
-        def pad_input(x, pad_h, pad_w):
+        def pad(x, pad_h, pad_w):
             """NHWC padding optimized with Numba. 2.5x faster than numpy.pad."""
             batch, in_h, in_w, channels = x.shape
             padded = np.zeros((batch, in_h + 2 * pad_h, in_w + 2 * pad_w, channels), dtype=x.dtype)
@@ -58,23 +61,21 @@ class Convolution:
             return padded
         """
         Args:
-            x  : (batchsize, height, width, input_channels)
+            input_tensor  : (batchsize, height, width, input_channels)
             kernel : (kernel_height, kernel_width, input_channels, output_channels)
             bias   : (output_channels,)
             stride : Stride for height/width
             padding: 'same' or 'valid'
-            dtype  : Output dtype (float32 recommended)
-
         Returns:
             output : (batchsize, output_height, output_width, output_channels)
         """
         # --- Pre-checks ---
-        x = np.ascontiguousarray(x)
+        input_tensor = np.ascontiguousarray(input_tensor)
         kernel = np.ascontiguousarray(kernel)
         bias = np.ascontiguousarray(bias)
 
         # --- Dimensions ---
-        batchsize, height, width, input_channels = x.shape
+        batchsize, height, width, input_channels = input_tensor.shape
         kernel_height, kernel_width, _, output_channels = kernel.shape
         stride = (stride, stride) if isinstance(stride, int) else stride
 
@@ -85,7 +86,7 @@ class Convolution:
         else:
             padding_height = padding_width = 0
 
-        padded_input = pad_input(x, padding_height, padding_width)
+        padded_input = pad(input_tensor, padding_height, padding_width)
         height_pad, width_pad = padded_input.shape[1], padded_input.shape[2]
 
         # --- Output Dimensions ---
@@ -129,6 +130,10 @@ class Convolution:
 
 
 class Dense:
+    """ input_tensor  : (batchsize, input_size)
+        weights : (input_size, output_size)
+        bias   : (output_size)
+    """
     def __init__(self, size: int, activation_function='relu', weight_initialization='He', bias_initialization='none'):
         if not isinstance(size, int) or size <= 0:
             raise ValueError("Size must be a positive integer")
@@ -209,10 +214,10 @@ class Dense:
             case 'none':
                 return np.zeros((1, output_size))
 
-    def forprop(self, x: np.ndarray):
-        unactivated = np.dot(x, self.weights) + self.bias
+    def forprop(self, input_tensor: np.ndarray):
+        unactivated = np.dot(input_tensor, self.weights) + self.bias
         activated = self.get_activation_function()(unactivated)
-        self.input_cache = x
+        self.input_cache = input_tensor
         self.unactivated_output_cache = unactivated
 
         return activated
@@ -276,8 +281,8 @@ class Dropout:
         self.dropout_rate = dropout_rate
 
     def forprop(self, x):
-        binary_matrix = np.random.rand(*x.shape[1:]) <= (1 - self.dropout_rate)
-        return x*binary_matrix/(1 - self.dropout_rate)
+        binary_tensor = np.random.rand(*x.shape[1:]) <= (1 - self.dropout_rate)
+        return x*binary_tensor/(1 - self.dropout_rate)
 
     @staticmethod
     def backprop(output_gradient):

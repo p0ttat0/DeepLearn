@@ -98,12 +98,12 @@ class SequentialModel:
         self.build(str(data['optimizer']), str(data['loss_func']))
         self.optimizer_obj.step = int(data['optimizer_step'])
 
-    def forprop(self, x: np.ndarray, mode='training'):
+    def forprop(self, input_tensor: np.ndarray, mode='training'):
         for layer in self.layers:
             if mode == 'testing' and layer.type in ['dropout']:
                 continue
-            x = layer.forprop(x)
-        return x
+            input_tensor = layer.forprop(input_tensor)
+        return input_tensor
 
     def backprop(self, output_gradient: np.ndarray):
         for layer in reversed(self.layers):
