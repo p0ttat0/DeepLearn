@@ -259,15 +259,16 @@ class Dense:
 
 
 class Reshape:
-    def __init__(self, input_shape: list, output_shape: list):
+    def __init__(self, output_shape: list):
         self.type = 'reshape'
-        self.input_shape = input_shape
+        self.input_shape = None
         self.output_shape = output_shape
         self.input_cache = None
         self.unactivated_output_cache = None
 
     def forprop(self, x):
         self.input_cache = x
+        self.input_shape = x.shape
         self.unactivated_output_cache = x.reshape(self.output_shape)
         return self.unactivated_output_cache
 
