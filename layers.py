@@ -105,15 +105,13 @@ class Convolution:
             writeable=False
         )
 
-        # --- GEMM Preparation ---
-        # Reshape to (batchsize*output_height*output_width, kernel_height*kernel_width*input_channels) without copying
-        # Force C-contiguous for BLAS (critical for performance)
+        # --- GEMM Preparation ---  
         x_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
         w_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')  # Fortran-order for BLAS
 
         # --- BLAS-Accelerated GEMM ---
         output = np.dot(x_col, w_col).astype(dtype, copy=False)
-        output += bias.reshape(1, -1)  # In-place broadcasted add
+        output += bias.reshape(1, -1)
 
         # --- Final Reshape ---
         return output.reshape(batchsize, output_height, output_width, output_channels)
