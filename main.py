@@ -9,7 +9,7 @@ data = Dataset.mnist()
 my_model = SequentialModel()
 
 my_model.layers = [
-    Reshape(input_shape=[-1, 28, 28], output_shape=[-1, 784]),
+    Reshape([-1, 784]),
     Dense(64, "swish", 'He'),
     Dense(10, 'softmax', 'Xavier'),
 ]
