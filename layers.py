@@ -9,13 +9,13 @@ class Convolution:
         kernel : (kernel_height, kernel_width, input_channels, output_channels)
         bias   : (output_channels,)
     """
-    def __init__(self, kernel_size: int, activation_function='relu', kernel_initialization='He', bias_initialization='none'):
+    def __init__(self, kernel_size: list, activation_function='relu', kernel_initialization='He', bias_initialization='none'):
         valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish']
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
 
         self.type = 'convolutional'
-        self.size = kernel_size
+        self.kernel_size = kernel_size
         self.input_shape = None
         self.output_shape = None
 
@@ -46,6 +46,38 @@ class Convolution:
         self.output_gradient_extremes = []
         self.activation_magnitude = []
         self.activation_extremes = []
+
+    def build(self, input_shape: list):
+        assert len(input_shape) < 3
+        self.input_shape = input_shape
+
+        if self.weights is None:
+            self.weights = self.initialize_kernel(self.kernel_initialization, input_shape[3]*self.kernel_size[0]*self.kernel_size[1], self.kernel_size[3]*self.kernel_size[0]*self.kernel_size[1], self.kernel_size)
+        if self.bias is None:
+            self.bias = self.initialize_bias(self.bias_initialization)
+
+        self.kernel_change_cache = np.zeros(shape=self.weights.shape)
+        self.bias_change_cache = np.zeros(shape=self.bias.shape)
+
+    @staticmethod
+    def initialize_kernel(initialization: str, input_size: int, output_size: int, kernel_size: list):
+        match initialization:
+            case 'He' | 'Kaiming':
+                return np.random.normal(0, scale=np.sqrt(2.0 / input_size), size=kernel_size)
+            case 'Xavier' | 'Glorot':
+                return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=kernel_size)
+            case 'LeCun':
+                return np.random.normal(0, scale=np.sqrt(1.0 / input_size), size=kernel_size)
+            case 'swish':
+                return np.random.normal(0, scale=1.1 / np.sqrt(input_size), size=kernel_size)
+            case _:
+                raise Exception("initialization method not found or not implemented. Maybe check spelling?")
+
+    @staticmethod
+    def initialize_bias(initialization: str):
+        match initialization:
+            case 'none':
+                return 0
 
     @staticmethod
     def conv2d_gemm(input_tensor, kernel, bias, stride=1, padding='same', dtype=np.float32):
