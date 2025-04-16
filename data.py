@@ -34,7 +34,7 @@ class Dataset:
 
         f = gzip.open(training_data_path, 'r')
         f.read(16)  # reads buffer
-        img_data = np.frombuffer(f.read(60000 * 784), dtype=np.uint8).reshape((60000, 784)) / 255 * 2 - 1
+        img_data = np.frombuffer(f.read(60000 * 784), dtype=np.uint8).reshape((60000, 784)) / 255
         f = gzip.open(training_labels_path, 'r')
         f.read(8)  # reads buffer
         img_labels = np.frombuffer(f.read(60000), dtype=np.uint8).astype(int)[:, np.newaxis]
@@ -42,7 +42,7 @@ class Dataset:
 
         f = gzip.open(test_data_path, 'r')
         f.read(16)  # reads buffer
-        testing_data = np.frombuffer(f.read(10000 * 784), dtype=np.uint8).reshape((10000, 784)) / 255 * 2 - 1
+        testing_data = np.frombuffer(f.read(10000 * 784), dtype=np.uint8).reshape((10000, 784)) / 255
         f = gzip.open(test_label_path, 'r')
         f.read(8)  # reads buffer
         testing_labels = np.frombuffer(f.read(10000), dtype=np.uint8).astype(int)[:, np.newaxis]  # 2d array
