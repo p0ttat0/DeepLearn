@@ -38,7 +38,7 @@ class SequentialModel:
                 if optimizer == "Adam":
                     self.optimizer_obj.fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
                     self.optimizer_obj.sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
-                input_shape = layer.output_shape
+            input_shape = layer.output_shape
             layer_num += 1
 
     def save(self, directory: str, file_name: str):
@@ -58,9 +58,18 @@ class SequentialModel:
                     layer_data[f'layer{i}_bias'] = self.layers[i].bias
                     layer_data[f'layer{i}_activation_func'] = self.layers[i].activation_function
                     layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
+                case 'convolution':
+                    layer_data[f'layer{i}'] = 'convolution'
+                    layer_data[f'layer{i}_weight_init'] = self.layers[i].weight_initialization
+                    layer_data[f'layer{i}_bias_init'] = self.layers[i].bias_initialization
+                    layer_data[f'layer{i}_weights'] = self.layers[i].weights
+                    layer_data[f'layer{i}_bias'] = self.layers[i].bias
+                    layer_data[f'layer{i}_padding'] = self.layers[i].padding
+                    layer_data[f'layer{i}_stride'] = self.layers[i].stride
+                    layer_data[f'layer{i}_activation_func'] = self.layers[i].activation_function
+                    layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
                 case 'reshape':
                     layer_data[f'layer{i}'] = 'reshape'
-                    layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
                     layer_data[f'layer{i}_output_shape'] = self.layers[i].output_shape
                 case 'dropout':
                     layer_data[f'layer{i}'] = 'dropout'
@@ -86,8 +95,18 @@ class SequentialModel:
                     new_layer.weights = data[f'layer{i}_weights']
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.activation_function = str(data[f'layer{i}_activation_func'])
+                case 'convolution':
+                    new_layer = layers.Convolution(data[f'layer{i}_weights'].shape)
+                    new_layer.weight_initialization = str(data[f'layer{i}_weight_init'])
+                    new_layer.bias_initialization = str(data[f'layer{i}_bias_init'])
+                    new_layer.input_shape = data[f'layer{i}_input_shape'].tolist()
+                    new_layer.weights = data[f'layer{i}_weights']
+                    new_layer.bias = data[f'layer{i}_bias']
+                    new_layer.padding = str(data[f'layer{i}_padding'])
+                    new_layer.stride = data[f'layer{i}_stride'].tolist()
+                    new_layer.activation_function = str(data[f'layer{i}_activation_func'])
                 case 'reshape':
-                    new_layer = layers.Reshape(data[f'layer{i}_input_shape'].tolist(), data[f'layer{i}_output_shape'].tolist())
+                    new_layer = layers.Reshape(data[f'layer{i}_output_shape'].tolist())
                 case 'dropout':
                     new_layer = layers.Dropout(float(data[f'layer{i}_dropout_rate']))
                 case _:

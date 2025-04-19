@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from activationFunctions import ActivationFunction
 from numpy.lib.stride_tricks import as_strided
 from numba import njit, prange
@@ -9,20 +10,22 @@ class Convolution:
         kernel : (kernel_height, kernel_width, input_channels, output_channels)
         bias   : (output_channels,)
     """
-    def __init__(self, kernel_size: list, activation_function='relu', kernel_initialization='He', bias_initialization='none'):
+    def __init__(self, kernel_shape: list, activation_function='relu', weight_initialization='He', bias_initialization='none', padding='valid', stride=[1, 1]):
         valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish']
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
 
-        self.type = 'convolutional'
-        self.kernel_size = kernel_size
+        self.type = 'convolution'
+        self.kernel_shape = kernel_shape
         self.input_shape = None
         self.output_shape = None
 
         self.weights = None
         self.bias = None
+        self.padding = padding
+        self.stride = stride
 
-        self.kernel_initialization = kernel_initialization
+        self.weight_initialization = weight_initialization
         self.bias_initialization = bias_initialization
         self.activation_function = activation_function
 
@@ -38,7 +41,7 @@ class Convolution:
         self.layer_num = None
         self.input_cache = None
         self.unactivated_output_cache = None
-        self.kernel_change_cache = None
+        self.weight_change_cache = None
         self.bias_change_cache = None
 
         # metrics tracking
@@ -48,16 +51,30 @@ class Convolution:
         self.activation_extremes = []
 
     def build(self, input_shape: list):
-        assert len(input_shape) < 3
+        assert len(input_shape) == 4
+        batch_size, in_height, in_width, in_channels = input_shape
+        kernel_height, kernel_width, kernel_in_channels, out_channels = self.kernel_shape
+        stride_height, stride_width = self.stride
+
+        if self.padding == 'valid':
+            out_height = math.floor((in_height - kernel_height) / stride_height) + 1
+            out_width = math.floor((in_width - kernel_width) / stride_width) + 1
+        elif self.padding == 'same':
+            out_height = math.ceil(in_height / stride_height)
+            out_width = math.ceil(in_width / stride_width)
+        else:
+            raise ValueError("Padding must be 'valid' or 'same'")
+
         self.input_shape = input_shape
+        self.output_shape = [batch_size, out_height, out_width, out_channels]
 
         if self.weights is None:
-            self.weights = self.initialize_kernel(self.kernel_initialization, input_shape[3]*self.kernel_size[0]*self.kernel_size[1], self.kernel_size[3]*self.kernel_size[0]*self.kernel_size[1], self.kernel_size)
+            self.weights = self.initialize_kernel(self.weight_initialization, input_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape)
         if self.bias is None:
             self.bias = self.initialize_bias(self.bias_initialization)
 
-        self.kernel_change_cache = np.zeros(shape=self.weights.shape)
-        self.bias_change_cache = np.zeros(shape=self.bias.shape)
+        self.weight_change_cache = np.zeros(shape=self.weights.shape)
+        self.bias_change_cache = np.zeros(1)
 
     @staticmethod
     def initialize_kernel(initialization: str, input_size: int, output_size: int, kernel_size: list):
@@ -77,10 +94,16 @@ class Convolution:
     def initialize_bias(initialization: str):
         match initialization:
             case 'none':
-                return 0
+                return np.zeros(1)
+
+    def get_activation_function(self):
+        return self._ACTIVATION_MAP[self.activation_function][0]
+
+    def get_d_activation_function(self):
+        return self._ACTIVATION_MAP[self.activation_function][1]
 
     @staticmethod
-    def conv2d_gemm(input_tensor, kernel, bias, stride=1, padding='same', dtype=np.float32):
+    def conv2d_gemm(input_tensor, kernel, bias, stride=[1, 1], padding='same', dtype=np.float32):
         @njit(parallel=True, fastmath=True, cache=True)
         def pad(x, pad_h, pad_w):   # NHWC padding
             batch, in_h, in_w, channels = x.shape
@@ -109,9 +132,11 @@ class Convolution:
         if padding == 'same':
             padding_height = (kernel_height - 1) // 2
             padding_width = (kernel_width - 1) // 2
-        else:
+        elif padding == 'valid':
             padding_height = 0
             padding_width = 0
+        else:
+            raise Exception(f'unsupported padding type {padding}')
 
         padded_input = pad(input_tensor, padding_height, padding_width)
         height_pad, width_pad = padded_input.shape[1], padded_input.shape[2]
@@ -147,6 +172,16 @@ class Convolution:
 
         # --- Final Reshape ---
         return output.reshape(batchsize, output_height, output_width, output_channels)
+
+    def forprop(self, input_tensor):
+        assert input_tensor.size != 0
+
+        unactivated = self.conv2d_gemm(input_tensor, self.weights, self.bias, self.stride, self.padding)
+        activated = self.get_activation_function()(unactivated)
+        self.input_cache = input_tensor
+        self.unactivated_output_cache = unactivated
+
+        return activated
 
 
 class Dense:
@@ -197,7 +232,7 @@ class Dense:
         self.activation_extremes = []
 
     def build(self, input_shape: list):
-        assert len(input_shape) < 3
+        assert len(input_shape) == 2
         self.input_shape = input_shape
 
         if self.weights is None:
@@ -286,16 +321,11 @@ class Reshape:
         self.type = 'reshape'
         self.input_shape = None
         self.output_shape = output_shape
-        self.input_cache = None
-        self.unactivated_output_cache = None
 
     def forprop(self, input_tensor: np.ndarray):
         assert input_tensor.size != 0
-
-        self.input_cache = input_tensor
         self.input_shape = input_tensor.shape
-        self.unactivated_output_cache = input_tensor.reshape(self.output_shape)
-        return self.unactivated_output_cache
+        return input_tensor.reshape(self.output_shape)
 
     def backprop(self, output_gradient: np.ndarray):
         assert output_gradient.size != 0
