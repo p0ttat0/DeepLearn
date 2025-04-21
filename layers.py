@@ -9,6 +9,8 @@ class Convolution:
     """ input_tensor  : (batchsize, height, width, input_channels)
         kernel : (kernel_height, kernel_width, input_channels, output_channels)
         bias   : (output_channels,)
+        stride : (height_stride, width_stride)
+        padding: 'valid' / 'same' / 'full'
     """
     def __init__(self, kernel_shape: list, activation_function='relu', weight_initialization='He', bias_initialization='none', padding='valid', stride=[1, 1]):
         valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish']
@@ -20,12 +22,12 @@ class Convolution:
         self.input_shape = None
         self.output_shape = None
 
-        self.weights = None
+        self.kernel = None
         self.bias = None
         self.padding = padding
         self.stride = stride
 
-        self.weight_initialization = weight_initialization
+        self.kernel_initialization = weight_initialization
         self.bias_initialization = bias_initialization
         self.activation_function = activation_function
 
@@ -41,7 +43,7 @@ class Convolution:
         self.layer_num = None
         self.input_cache = None
         self.unactivated_output_cache = None
-        self.weight_change_cache = None
+        self.kernel_change_cache = None
         self.bias_change_cache = None
 
         # metrics tracking
@@ -68,13 +70,13 @@ class Convolution:
         self.input_shape = input_shape
         self.output_shape = [batch_size, out_height, out_width, out_channels]
 
-        if self.weights is None:
-            self.weights = self.initialize_kernel(self.weight_initialization, input_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape)
+        if self.kernel is None:
+            self.kernel = self.initialize_kernel(self.kernel_initialization, input_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape)
         if self.bias is None:
-            self.bias = self.initialize_bias(self.bias_initialization)
+            self.bias = self.initialize_bias(self.bias_initialization, self.kernel_shape[3])
 
-        self.weight_change_cache = np.zeros(shape=self.weights.shape)
-        self.bias_change_cache = np.zeros(1)
+        self.kernel_change_cache = np.zeros(shape=self.kernel.shape)
+        self.bias_change_cache = np.zeros(self.kernel_shape[3])
 
     @staticmethod
     def initialize_kernel(initialization: str, input_size: int, output_size: int, kernel_size: list):
@@ -91,10 +93,10 @@ class Convolution:
                 raise Exception("initialization method not found or not implemented. Maybe check spelling?")
 
     @staticmethod
-    def initialize_bias(initialization: str):
+    def initialize_bias(initialization: str, size: int):
         match initialization:
             case 'none':
-                return np.zeros(1)
+                return np.zeros(size)
 
     def get_activation_function(self):
         return self._ACTIVATION_MAP[self.activation_function][0]
@@ -103,7 +105,20 @@ class Convolution:
         return self._ACTIVATION_MAP[self.activation_function][1]
 
     @staticmethod
-    def conv2d_gemm(input_tensor, kernel, bias, stride=[1, 1], padding='same', dtype=np.float32):
+    def dilate(input_tensor: np.ndarray, stride: list):
+        if stride == [1, 1]:
+            return input_tensor
+
+        batch_size, height, width, channels = input_tensor.shape
+        out_height = height + (height - 1) * (stride[0] - 1)
+        out_width = width + (width - 1) * (stride[1] - 1)
+
+        out = np.zeros((batch_size, out_height, out_width, channels), dtype=input_tensor.dtype)
+        out[:, :, ::stride[0], ::stride[1]] = input_tensor
+        return out
+
+    @staticmethod
+    def cross_correlate2d(input_tensor, kernel, stride=[1, 1], padding='valid', merge_input_channels=True, dtype=np.float32):
         @njit(parallel=True, fastmath=True, cache=True)
         def pad(x, pad_h, pad_w):   # NHWC padding
             batch, in_h, in_w, channels = x.shape
@@ -135,6 +150,12 @@ class Convolution:
         elif padding == 'valid':
             padding_height = 0
             padding_width = 0
+        elif padding == 'full':
+            padding_height = kernel_height - 1
+            padding_width = kernel_width - 1
+        elif isinstance(padding, list) and len(padding) == 2:
+            padding_height = padding[0]
+            padding_width = padding[1]
         else:
             raise Exception(f'unsupported padding type {padding}')
 
@@ -162,26 +183,69 @@ class Convolution:
             writeable=False
         )
 
-        # --- GEMM Preparation ---  
-        x_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
-        w_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')  # Fortran-order for BLAS
+        if merge_input_channels:
+            x_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
+            w_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')
+            output = np.dot(x_col, w_col).astype(dtype, copy=False)
 
-        # --- BLAS-Accelerated GEMM ---
-        output = np.dot(x_col, w_col).astype(dtype, copy=False)
-        output += bias.reshape(1, -1)
+            return output.reshape(batchsize, output_height, output_width, output_channels)
+        else:     # doesn't sum across input channels
+            x_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width, input_channels), order='C')
+            w_col = np.reshape(kernel, (kernel_height * kernel_width, input_channels, output_channels), order='F')
+            output = np.tensordot(x_col, w_col, axes=([1], [0])).astype(dtype, copy=False)
 
-        # --- Final Reshape ---
-        return output.reshape(batchsize, output_height, output_width, output_channels)
+            return output.reshape(batchsize, output_height, output_width, input_channels, output_channels)
+
+    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride=[1, 1], padding="full"):
+        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, padding)
 
     def forprop(self, input_tensor):
         assert input_tensor.size != 0
 
-        unactivated = self.conv2d_gemm(input_tensor, self.weights, self.bias, self.stride, self.padding)
+        unactivated = self.cross_correlate2d(input_tensor, self.kernel, self.stride, self.padding) + self.bias
         activated = self.get_activation_function()(unactivated)
         self.input_cache = input_tensor
         self.unactivated_output_cache = unactivated
 
         return activated
+
+    def backprop(self, output_gradient: np.ndarray):
+        assert output_gradient.size != 0
+        assert self.input_cache is not None
+        assert self.unactivated_output_cache is not None
+
+        dilated_output_gradient = self.dilate(output_gradient, self.stride)
+
+        # --- Partial Derivatives ---
+        dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
+        dw = self.cross_correlate2d(self.input_cache, np.reshape(dilated_output_gradient), stride=[1, 1], padding=[1, 1])
+        db = np.sum(dz, axis=(0, 1, 2))
+        di = self.conv2d(dilated_output_gradient, self.kernel)
+
+        #  --- Gradient Accumulation ---
+        self.kernel_change_cache += dw
+        self.bias_change_cache += db
+
+        # --- Metrics Tracking ---
+        self.activation_magnitude = np.mean(np.abs(self.unactivated_output_cache))
+        self.activation_extremes = np.max(self.unactivated_output_cache) + np.abs(np.min(self.unactivated_output_cache)) / 2
+        self.output_gradient_magnitude = np.mean(np.abs(output_gradient))
+        self.output_gradient_extremes = np.max(output_gradient) + np.abs(np.min(output_gradient)) / 2
+
+        return di
+
+    def apply_changes(self, batch_size: int, lr: float, optimizer, clip_value: float):
+        assert np.any(self.kernel_change_cache)
+        assert np.any(self.bias_change_cache)
+
+        #  --- Weights And Biases Update ---
+        weight_change, bias_change = optimizer.adjust_gradient(self.layer_num, self.kernel_change_cache / batch_size, self.bias_change_cache / batch_size, lr)
+        self.kernel -= np.clip(weight_change, -clip_value, clip_value)
+        self.bias -= np.clip(bias_change, -clip_value, clip_value)
+
+        # --- Reset Gradient Caches ---
+        self.kernel_change_cache = np.zeros_like(self.kernel)
+        self.bias_change_cache = np.zeros_like(self.bias)
 
 
 class Dense:
