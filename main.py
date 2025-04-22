@@ -20,7 +20,7 @@ my_model.build(optimizer='Adam')
 my_model.save('saved models', 'model2')
 my_model.load('saved models/model2.npz')
 my_model.forprop(np.random.rand(12, 28, 28, 1))
-#my_model.backprop(np.random.rand(12, 10))
+my_model.backprop(np.random.rand(12, 10))
 
 # tracker = MetricTracker(my_model, ['training accuracy', 'training losses', 'gradient magnitude', 'gradient extremes', 'activation magnitude', 'activation extremes'])
 

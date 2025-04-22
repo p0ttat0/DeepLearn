@@ -214,13 +214,13 @@ class Convolution:
         assert self.input_cache is not None
         assert self.unactivated_output_cache is not None
 
-        dilated_output_gradient = self.dilate(output_gradient, self.stride)
-
         # --- Partial Derivatives ---
         dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
-        dw = self.cross_correlate2d(self.input_cache, np.reshape(dilated_output_gradient), stride=[1, 1], padding=[1, 1])
+        dilated_dz = self.dilate(dz, self.stride)
+
+        dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=[1, 1], merge_input_channels=False)
         db = np.sum(dz, axis=(0, 1, 2))
-        di = self.conv2d(dilated_output_gradient, self.kernel)
+        di = self.conv2d(dilated_dz, self.kernel)
 
         #  --- Gradient Accumulation ---
         self.kernel_change_cache += dw
