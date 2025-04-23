@@ -212,7 +212,6 @@ class Convolution:
         # --- Partial Derivatives ---
         dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
         dilated_dz = self.dilate(dz, self.stride)
-
         dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=self.get_padding_obj(self.padding)).transpose(1, 2, 0, 3)
         db = np.sum(dz, axis=(0, 1, 2))
         di = self.conv2d(dilated_dz, self.kernel)
