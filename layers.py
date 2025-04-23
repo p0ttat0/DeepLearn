@@ -237,9 +237,11 @@ class Convolution:
         self.kernel -= np.clip(weight_change, -clip_value, clip_value)
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
 
-        # --- Reset Gradient Caches ---
+        # --- Reset Caches ---
         self.kernel_change_cache = np.zeros_like(self.kernel)
         self.bias_change_cache = np.zeros_like(self.bias)
+        self.input_cache = None
+        self.unactivated_output_cache = None
 
 
 class Dense:
@@ -369,9 +371,11 @@ class Dense:
         self.weights -= np.clip(weight_change, -clip_value, clip_value)
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
 
-        # --- Reset Gradient Caches ---
+        # --- Reset Caches ---
         self.weight_change_cache = np.zeros_like(self.weights)
         self.bias_change_cache = np.zeros_like(self.bias)
+        self.input_cache = None
+        self.unactivated_output_cache = None
 
 
 class Reshape:
