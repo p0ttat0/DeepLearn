@@ -26,6 +26,12 @@ class Data:
 class Dataset:
     @staticmethod
     def mnist():  # loads mnist and returns training data, training labels, testing data, testing labels
+        """
+        training_data   : (60000, 28, 28)
+        testing_data    : (10000, 28, 28)
+        Returns:
+            Data_obj    : (training_data, testing_data)
+        """
         directory = os.path.dirname(__file__)
         training_data_path = os.path.join(directory, r"mnist\train-images-idx3-ubyte.gz")
         training_labels_path = os.path.join(directory, r"mnist\train-labels-idx1-ubyte.gz")
