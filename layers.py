@@ -123,8 +123,8 @@ class Convolution:
             return input_tensor
 
         batch_size, height, width, channels = input_tensor.shape
-        out_height = height + (height - 1) * (stride[0] - 1)
-        out_width = width + (width - 1) * (stride[1] - 1)
+        out_height = height*stride[0]
+        out_width = width*stride[1]
 
         out = np.zeros((batch_size, out_height, out_width, channels), dtype=input_tensor.dtype)
         out[:, ::stride[0], ::stride[1], :] = input_tensor
@@ -213,8 +213,7 @@ class Convolution:
         dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
         dilated_dz = self.dilate(dz, self.stride)
 
-        padding = self.get_padding_obj(self.padding)
-        dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=padding).transpose(1, 2, 0, 3)
+        dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=self.get_padding_obj(self.padding)).transpose(1, 2, 0, 3)
         db = np.sum(dz, axis=(0, 1, 2))
         di = self.conv2d(dilated_dz, self.kernel)
 
