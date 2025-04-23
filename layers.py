@@ -12,20 +12,22 @@ class Convolution:
         stride : (height_stride, width_stride)
         padding: 'valid' / 'same' / 'full'
     """
-    def __init__(self, kernel_shape: list, activation_function='relu', weight_initialization='He', bias_initialization='none', padding='valid', stride=[1, 1]):
+    def __init__(self, kernel_shape: list, activation_function='relu', weight_initialization='He', bias_initialization='none', padding='valid', stride=1):
         valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish']
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
-
+        
+        # --- layer general attributes ---
         self.type = 'convolution'
         self.kernel_shape = kernel_shape
         self.input_shape = None
         self.output_shape = None
 
+        # --- layer type spesific attributes ---
         self.kernel = None
         self.bias = None
         self.padding = padding
-        self.stride = stride
+        self.stride = [stride, stride] if isinstance(stride, int) else stride
 
         self.kernel_initialization = weight_initialization
         self.bias_initialization = bias_initialization
@@ -52,7 +54,7 @@ class Convolution:
         self.activation_magnitude = []
         self.activation_extremes = []
 
-    def build(self, input_shape: list):
+    def build(self, input_shape: tuple):
         assert len(input_shape) == 4
         batch_size, in_height, in_width, in_channels = input_shape
         kernel_height, kernel_width, kernel_in_channels, out_channels = self.kernel_shape
@@ -68,7 +70,7 @@ class Convolution:
             raise ValueError("Padding must be 'valid' or 'same'")
 
         self.input_shape = input_shape
-        self.output_shape = [batch_size, out_height, out_width, out_channels]
+        self.output_shape = (batch_size, out_height, out_width, out_channels)
 
         if self.kernel is None:
             self.kernel = self.initialize_kernel(self.kernel_initialization, input_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape)
@@ -104,21 +106,33 @@ class Convolution:
     def get_d_activation_function(self):
         return self._ACTIVATION_MAP[self.activation_function][1]
 
+    def get_padding_obj(self, padding_type):
+        match padding_type:
+            case 'same':
+                return [(self.kernel_shape[0] - 1) // 2, (self.kernel_shape[1] - 1) // 2]
+            case 'valid':
+                return [0, 0]
+            case 'full':
+                return [self.kernel_shape[0] - 1, self.kernel_shape[1] - 1]
+            case _:
+                raise Exception(f'unsupported padding type {padding_type}')
+
     @staticmethod
     def dilate(input_tensor: np.ndarray, stride: list):
         if stride == [1, 1]:
             return input_tensor
 
         batch_size, height, width, channels = input_tensor.shape
-        out_height = height + (height - 1) * (stride[0] - 1)
-        out_width = width + (width - 1) * (stride[1] - 1)
+        out_height = height*stride[0]
+        out_width = width*stride[1]
 
         out = np.zeros((batch_size, out_height, out_width, channels), dtype=input_tensor.dtype)
-        out[:, :, ::stride[0], ::stride[1]] = input_tensor
+        out[:, ::stride[0], ::stride[1], :] = input_tensor
         return out
 
     @staticmethod
-    def cross_correlate2d(input_tensor, kernel, stride=[1, 1], padding='valid', merge_input_channels=True, dtype=np.float32):
+    def cross_correlate2d(input_tensor: np.ndarray, kernel: np.ndarray, stride: list, padding: list, dtype=np.float32):
+
         @njit(parallel=True, fastmath=True, cache=True)
         def pad(x, pad_h, pad_w):   # NHWC padding
             batch, in_h, in_w, channels = x.shape
@@ -130,34 +144,21 @@ class Convolution:
             return padded
         """
         Args:
-            input_tensor  : (batchsize, height, width, input_channels)
+            input_tensor  : (batch_size, height, width, input_channels)
             kernel : (kernel_height, kernel_width, input_channels, output_channels)
             bias   : (output_channels,)
             stride : Stride for height/width
             padding: 'same' or 'valid'
         Returns:
-            output : (batchsize, output_height, output_width, output_channels)
+            output : (batch_size, output_height, output_width, output_channels)
         """
         # --- Dimensions ---
-        batchsize, height, width, input_channels = input_tensor.shape
+        batch_size, height, width, input_channels = input_tensor.shape
         kernel_height, kernel_width, _, output_channels = kernel.shape
-        stride = (stride, stride) if isinstance(stride, int) else stride
 
         # --- Padding ---
-        if padding == 'same':
-            padding_height = (kernel_height - 1) // 2
-            padding_width = (kernel_width - 1) // 2
-        elif padding == 'valid':
-            padding_height = 0
-            padding_width = 0
-        elif padding == 'full':
-            padding_height = kernel_height - 1
-            padding_width = kernel_width - 1
-        elif isinstance(padding, list) and len(padding) == 2:
-            padding_height = padding[0]
-            padding_width = padding[1]
-        else:
-            raise Exception(f'unsupported padding type {padding}')
+        padding_height = padding[0]
+        padding_width = padding[1]
 
         padded_input = pad(input_tensor, padding_height, padding_width)
         height_pad, width_pad = padded_input.shape[1], padded_input.shape[2]
@@ -178,31 +179,25 @@ class Convolution:
 
         windows = as_strided(
             padded_input,
-            shape=(batchsize, output_height, output_width, kernel_height, kernel_width, input_channels),
+            shape=(batch_size, output_height, output_width, kernel_height, kernel_width, input_channels),
             strides=strides,
             writeable=False
         )
 
-        if merge_input_channels:
-            x_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
-            w_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')
-            output = np.dot(x_col, w_col).astype(dtype, copy=False)
+        x_col = np.reshape(windows, (batch_size * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
+        w_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')
+        output = np.dot(x_col, w_col).astype(dtype, copy=False)
 
-            return output.reshape(batchsize, output_height, output_width, output_channels)
-        else:     # doesn't sum across input channels
-            x_col = np.reshape(windows, (batchsize * output_height * output_width, kernel_height * kernel_width, input_channels), order='C')
-            w_col = np.reshape(kernel, (kernel_height * kernel_width, input_channels, output_channels), order='F')
-            output = np.tensordot(x_col, w_col, axes=([1], [0])).astype(dtype, copy=False)
+        return output.reshape(batch_size, output_height, output_width, output_channels)
 
-            return output.reshape(batchsize, output_height, output_width, input_channels, output_channels)
-
-    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride=[1, 1], padding="full"):
-        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, padding)
+    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride=1, padding="valid"):
+        stride = [stride, stride] if isinstance(stride, int) else stride
+        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, self.get_padding_obj(padding))
 
     def forprop(self, input_tensor):
         assert input_tensor.size != 0
 
-        unactivated = self.cross_correlate2d(input_tensor, self.kernel, self.stride, self.padding) + self.bias
+        unactivated = self.cross_correlate2d(input_tensor, self.kernel, self.stride, self.get_padding_obj(self.padding)) + self.bias
         activated = self.get_activation_function()(unactivated)
         self.input_cache = input_tensor
         self.unactivated_output_cache = unactivated
@@ -217,8 +212,7 @@ class Convolution:
         # --- Partial Derivatives ---
         dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
         dilated_dz = self.dilate(dz, self.stride)
-
-        dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=[1, 1], merge_input_channels=False)
+        dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=self.get_padding_obj(self.padding)).transpose(1, 2, 0, 3)
         db = np.sum(dz, axis=(0, 1, 2))
         di = self.conv2d(dilated_dz, self.kernel)
 
@@ -243,9 +237,11 @@ class Convolution:
         self.kernel -= np.clip(weight_change, -clip_value, clip_value)
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
 
-        # --- Reset Gradient Caches ---
+        # --- Reset Caches ---
         self.kernel_change_cache = np.zeros_like(self.kernel)
         self.bias_change_cache = np.zeros_like(self.bias)
+        self.input_cache = None
+        self.unactivated_output_cache = None
 
 
 class Dense:
@@ -295,7 +291,7 @@ class Dense:
         self.activation_magnitude = []
         self.activation_extremes = []
 
-    def build(self, input_shape: list):
+    def build(self, input_shape: tuple):
         assert len(input_shape) == 2
         self.input_shape = input_shape
 
@@ -375,20 +371,23 @@ class Dense:
         self.weights -= np.clip(weight_change, -clip_value, clip_value)
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
 
-        # --- Reset Gradient Caches ---
+        # --- Reset Caches ---
         self.weight_change_cache = np.zeros_like(self.weights)
         self.bias_change_cache = np.zeros_like(self.bias)
+        self.input_cache = None
+        self.unactivated_output_cache = None
 
 
 class Reshape:
-    def __init__(self, output_shape: list):
+    def __init__(self, output_shape: tuple):
         self.type = 'reshape'
+        self.layer_num = None
         self.input_shape = None
         self.output_shape = output_shape
 
     def forprop(self, input_tensor: np.ndarray):
         assert input_tensor.size != 0
-        self.input_shape = input_tensor.shape
+        assert input_tensor.shape[1:] == self.input_shape[1:]
         return input_tensor.reshape(self.output_shape)
 
     def backprop(self, output_gradient: np.ndarray):
@@ -399,6 +398,7 @@ class Reshape:
 class Dropout:
     def __init__(self, dropout_rate: float):
         self.type = 'dropout'
+        self.layer_num = None
         self.dropout_rate = dropout_rate
 
     def forprop(self, input_tensor: np.ndarray):

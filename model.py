@@ -13,6 +13,7 @@ class SequentialModel:
         self.optimizer = None
         self.optimizer_obj = None
         self.loss_func = None
+        self.input_shape = None
 
     @staticmethod
     def get_optimizer(optimizer: str):
@@ -24,11 +25,12 @@ class SequentialModel:
             case _:
                 raise Exception(f"no optimizer called {optimizer}")
 
-    def build(self, optimizer='Adam', loss_func='cce'):
+    def build(self, input_shape, optimizer='Adam', loss_func='cce'):
         self.optimizer = optimizer
         self.optimizer_obj = self.get_optimizer(optimizer)
         self.loss_func = loss_func
-        input_shape = self.layers[0].output_shape
+        self.input_shape = input_shape
+
         layer_num = 0
         for layer in self.layers:
             match layer.type:
@@ -43,17 +45,19 @@ class SequentialModel:
                         self.optimizer_obj.fme[layer_num] = [np.zeros(layer.kernel.shape), np.zeros(layer.bias.shape)]
                         self.optimizer_obj.sme[layer_num] = [np.zeros(layer.kernel.shape), np.zeros(layer.bias.shape)]
                 case "reshape":
+                    layer.input_shape = input_shape
                     pass
                 case "dropout":
                     pass
+            layer.layer_num = layer_num
             input_shape = layer.output_shape
             layer_num += 1
 
     def save(self, directory: str, file_name: str):
         layer_data = {'layer_num': len(self.layers),
                       'optimizer': self.optimizer,
-                      'optimizer_step': self.optimizer_obj.step,
                       'loss_func': self.loss_func,
+                      'input_shape': self.input_shape
                       }
 
         for i in range(len(self.layers)):
@@ -78,6 +82,7 @@ class SequentialModel:
                     layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
                 case 'reshape':
                     layer_data[f'layer{i}'] = 'reshape'
+                    layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
                     layer_data[f'layer{i}_output_shape'] = self.layers[i].output_shape
                 case 'dropout':
                     layer_data[f'layer{i}'] = 'dropout'
@@ -99,7 +104,7 @@ class SequentialModel:
                     new_layer = layers.Dense(size)
                     new_layer.weight_initialization = str(data[f'layer{i}_weights_init'])
                     new_layer.bias_initialization = str(data[f'layer{i}_bias_init'])
-                    new_layer.input_shape = data[f'layer{i}_input_shape'].tolist()
+                    new_layer.input_shape = tuple(data[f'layer{i}_input_shape'].tolist())
                     new_layer.weights = data[f'layer{i}_weights']
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.activation_function = str(data[f'layer{i}_activation_func'])
@@ -107,14 +112,15 @@ class SequentialModel:
                     new_layer = layers.Convolution(data[f'layer{i}_weights'].shape)
                     new_layer.kernel_initialization = str(data[f'layer{i}_weight_init'])
                     new_layer.bias_initialization = str(data[f'layer{i}_bias_init'])
-                    new_layer.input_shape = data[f'layer{i}_input_shape'].tolist()
+                    new_layer.input_shape = tuple(data[f'layer{i}_input_shape'])
                     new_layer.kernel = data[f'layer{i}_weights']
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.padding = str(data[f'layer{i}_padding'])
                     new_layer.stride = data[f'layer{i}_stride'].tolist()
                     new_layer.activation_function = str(data[f'layer{i}_activation_func'])
                 case 'reshape':
-                    new_layer = layers.Reshape(data[f'layer{i}_output_shape'].tolist())
+                    new_layer = layers.Reshape(tuple(data[f'layer{i}_output_shape'].tolist()))
+                    new_layer.input_shape = tuple(data[f'layer{i}_input_shape'].tolist())
                 case 'dropout':
                     new_layer = layers.Dropout(float(data[f'layer{i}_dropout_rate']))
                 case _:
@@ -122,11 +128,13 @@ class SequentialModel:
 
             self.layers.append(new_layer)
 
-        self.build(str(data['optimizer']), str(data['loss_func']))
-        self.optimizer_obj.step = int(data['optimizer_step'])
+        self.build(tuple(data['input_shape'].tolist()), str(data['optimizer']), str(data['loss_func']))
 
     def forprop(self, input_tensor: np.ndarray, mode='training'):
+        batch_size = input_tensor.shape[0]
         for layer in self.layers:
+            assert input_tensor.shape[0] == batch_size
+
             if mode == 'testing' and layer.type in ['dropout']:
                 continue
             input_tensor = layer.forprop(input_tensor)
