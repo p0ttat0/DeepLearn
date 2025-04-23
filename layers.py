@@ -190,9 +190,9 @@ class Convolution:
 
         return output.reshape(batch_size, output_height, output_width, output_channels)
 
-    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride=1):
+    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride=1, padding="valid"):
         stride = [stride, stride] if isinstance(stride, int) else stride
-        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, self.get_padding_obj("full"))
+        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, self.get_padding_obj(padding))
 
     def forprop(self, input_tensor):
         assert input_tensor.size != 0
