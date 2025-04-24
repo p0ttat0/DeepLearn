@@ -146,6 +146,7 @@ class SequentialModel:
             output_gradient = layer.backprop(output_gradient)
 
     def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float, tracker: MetricTracker, readout_freq=10, readout_sample_size=100):
+        assert readout_sample_size < batch_size
         def on_press(key):
             try:
                 if key == keyboard.Key.f7:

@@ -22,9 +22,9 @@ my_model.load('saved models/model2.npz')
 my_model.forprop(np.random.rand(12, 28, 28))
 my_model.backprop(np.random.rand(12, 10))
 
-# tracker = MetricTracker(my_model, ['training accuracy', 'training losses', 'gradient magnitude', 'gradient extremes', 'activation magnitude', 'activation extremes'])
+tracker = MetricTracker(my_model, ['training accuracy', 'training losses', 'gradient magnitude', 'gradient extremes', 'activation magnitude', 'activation extremes'])
 
-'''my_model.train(
+my_model.train(
     data,
     epochs=10,
     batch_size=300,
@@ -33,18 +33,6 @@ my_model.backprop(np.random.rand(12, 10))
     tracker=tracker,
     readout_freq=5,
     readout_sample_size=256
-)'''
+)
 # my_model.test(data.validation_data, data.validation_labels, 5)
 # my_model.save('saved models', 'model2')
-
-x = Convolution([3, 3, 1, 1], 'relu', 'He', padding='same', stride=1)
-x.build((-1, 28, 28, 1))
-x.kernel = np.array([[-1, 0, 1],
-                     [-2, 0, 2],
-                     [-1, 0, 1]]).reshape(3, 3, 1, 1)
-d = x.forprop(data.training_data[0].reshape((1, 28, 28, 1)))
-import matplotlib.pyplot as plt
-plt.imshow(data.training_data[0], cmap='viridis')
-plt.show()
-plt.imshow(d.reshape((28, 28)), cmap='viridis')
-plt.show()
