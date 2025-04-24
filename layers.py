@@ -23,7 +23,7 @@ class Convolution:
         self.input_shape = None
         self.output_shape = None
 
-        # --- layer type spesific attributes ---
+        # --- layer type specific attributes ---
         self.kernel = None
         self.bias = None
         self.padding = padding
@@ -118,17 +118,18 @@ class Convolution:
                 raise Exception(f'unsupported padding type {padding_type}')
 
     @staticmethod
-    def dilate(input_tensor: np.ndarray, stride: list):
-        if stride == [1, 1]:
+    def dilate(input_tensor: np.ndarray, dilation_rate: list):
+        if dilation_rate == [1, 1]:
             return input_tensor
 
-        batch_size, height, width, channels = input_tensor.shape
-        out_height = height*stride[0]
-        out_width = width*stride[1]
+        # output_height = (input_tensor.shape[1] - 1) * dilation_rate[1] + 1
+        # output_width = (input_tensor.shape[2] - 1) * dilation_rate[0] + 1
+        output_height = input_tensor.shape[1] * dilation_rate[1]
+        output_width = input_tensor.shape[2] * dilation_rate[0]
+        dilated = np.zeros((input_tensor.shape[0], output_height, output_width, input_tensor.shape[3]))
+        dilated[:, ::dilation_rate[1], ::dilation_rate[0], :] = input_tensor
 
-        out = np.zeros((batch_size, out_height, out_width, channels), dtype=input_tensor.dtype)
-        out[:, ::stride[0], ::stride[1], :] = input_tensor
-        return out
+        return dilated
 
     @staticmethod
     def cross_correlate2d(input_tensor: np.ndarray, kernel: np.ndarray, stride: list, padding: list, dtype=np.float32):
@@ -190,9 +191,9 @@ class Convolution:
 
         return output.reshape(batch_size, output_height, output_width, output_channels)
 
-    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride=1, padding="valid"):
+    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride: list, padding: list):
         stride = [stride, stride] if isinstance(stride, int) else stride
-        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, self.get_padding_obj(padding))
+        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, padding)
 
     def forprop(self, input_tensor):
         assert input_tensor.size != 0
@@ -210,11 +211,13 @@ class Convolution:
         assert self.unactivated_output_cache is not None
 
         # --- Partial Derivatives ---
+        padding = self.get_padding_obj(self.padding)        # padding during forprop
+        full_padding = self.get_padding_obj("full")
         dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
         dilated_dz = self.dilate(dz, self.stride)
-        dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=self.get_padding_obj(self.padding)).transpose(1, 2, 0, 3)
+        dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=padding).transpose(1, 2, 0, 3)
         db = np.sum(dz, axis=(0, 1, 2))
-        di = self.conv2d(dilated_dz, self.kernel)
+        di = self.conv2d(dilated_dz, np.transpose(self.kernel, (0, 1, 3, 2)), stride=[1, 1], padding=[full_padding[0]-padding[0], full_padding[1]-padding[1]])
 
         #  --- Gradient Accumulation ---
         self.kernel_change_cache += dw
