@@ -64,6 +64,7 @@ class SequentialModel:
             match self.layers[i].type:
                 case 'dense':
                     layer_data[f'layer{i}'] = 'dense'
+                    layer_data[f'layer{i}_dtype'] = f"np.{self.layers[i].dtype.__name__}"
                     layer_data[f'layer{i}_weights_init'] = self.layers[i].weight_initialization
                     layer_data[f'layer{i}_bias_init'] = self.layers[i].bias_initialization
                     layer_data[f'layer{i}_weights'] = self.layers[i].weights
@@ -72,9 +73,10 @@ class SequentialModel:
                     layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
                 case 'convolution':
                     layer_data[f'layer{i}'] = 'convolution'
-                    layer_data[f'layer{i}_weight_init'] = self.layers[i].kernel_initialization
+                    layer_data[f'layer{i}_dtype'] = f"np.{self.layers[i].dtype.__name__}"
+                    layer_data[f'layer{i}_kernel_init'] = self.layers[i].kernel_initialization
                     layer_data[f'layer{i}_bias_init'] = self.layers[i].bias_initialization
-                    layer_data[f'layer{i}_weights'] = self.layers[i].kernel
+                    layer_data[f'layer{i}_kernel'] = self.layers[i].kernel
                     layer_data[f'layer{i}_bias'] = self.layers[i].bias
                     layer_data[f'layer{i}_padding'] = self.layers[i].padding
                     layer_data[f'layer{i}_stride'] = self.layers[i].stride
@@ -100,8 +102,8 @@ class SequentialModel:
             match data[f'layer{i}']:
                 case 'dense':
                     size = data[f'layer{i}_weights'].shape[0]
-
                     new_layer = layers.Dense(size)
+                    new_layer.dtype = eval(str(data[f'layer{i}_dtype']))
                     new_layer.weight_initialization = str(data[f'layer{i}_weights_init'])
                     new_layer.bias_initialization = str(data[f'layer{i}_bias_init'])
                     new_layer.input_shape = tuple(data[f'layer{i}_input_shape'].tolist())
@@ -109,11 +111,12 @@ class SequentialModel:
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.activation_function = str(data[f'layer{i}_activation_func'])
                 case 'convolution':
-                    new_layer = layers.Convolution(data[f'layer{i}_weights'].shape)
-                    new_layer.kernel_initialization = str(data[f'layer{i}_weight_init'])
+                    new_layer = layers.Convolution(data[f'layer{i}_kernel'].shape)
+                    new_layer.dtype = eval(str(data[f'layer{i}_dtype']))
+                    new_layer.kernel_initialization = str(data[f'layer{i}_kernel_init'])
                     new_layer.bias_initialization = str(data[f'layer{i}_bias_init'])
                     new_layer.input_shape = tuple(data[f'layer{i}_input_shape'])
-                    new_layer.kernel = data[f'layer{i}_weights']
+                    new_layer.kernel = data[f'layer{i}_kernel']
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.padding = str(data[f'layer{i}_padding'])
                     new_layer.stride = data[f'layer{i}_stride'].tolist()
@@ -135,18 +138,39 @@ class SequentialModel:
         for layer in self.layers:
             assert input_tensor.shape[0] == batch_size
 
-            if mode == 'testing' and layer.type in ['dropout']:
-                continue
-            input_tensor = layer.forprop(input_tensor)
+            match layer.type:
+                case 'dropout':
+                    if mode == 'testing':
+                        continue
+                case 'reshape':
+                    input_tensor = layer.forprop(input_tensor)
+                case 'dense':
+                    input_tensor = layer.forprop(input_tensor)
+                case 'convolution':
+                    input_tensor = layer.forprop(input_tensor)
+                case _:
+                    raise Exception(f'unknown layer type {layer.type}')
+
         return input_tensor
 
     def backprop(self, output_gradient: np.ndarray):
         for layer in reversed(self.layers):
             # back propagates to accumulate weight/bias changes and outputs input gradient
-            output_gradient = layer.backprop(output_gradient)
+            match layer.type:
+                case 'dropout':
+                    pass
+                case 'reshape':
+                    output_gradient = layer.backprop(output_gradient)
+                case 'dense':
+                    output_gradient = layer.backprop(output_gradient)
+                case 'convolution':
+                    output_gradient = layer.backprop(output_gradient)
+                case _:
+                    raise Exception(f'unknown layer type {layer.type}')
 
-    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float, tracker: MetricTracker, readout_freq=10, readout_sample_size=100):
+    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float, tracker: MetricTracker, readout_freq=10, readout_sample_size=100, dtype=np.float32):
         assert readout_sample_size < batch_size
+
         def on_press(key):
             try:
                 if key == keyboard.Key.f7:

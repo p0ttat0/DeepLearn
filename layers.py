@@ -12,7 +12,7 @@ class Convolution:
         stride : (height_stride, width_stride)
         padding: 'valid' / 'same' / 'full'
     """
-    def __init__(self, kernel_shape: list, activation_function='relu', weight_initialization='He', bias_initialization='none', padding='valid', stride=1):
+    def __init__(self, kernel_shape: list, activation_function='relu', weight_initialization='He', bias_initialization='none', padding='valid', stride=1, dtype=np.float32):
         valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish']
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
@@ -28,6 +28,7 @@ class Convolution:
         self.bias = None
         self.padding = padding
         self.stride = [stride, stride] if isinstance(stride, int) else stride
+        self.dtype = dtype
 
         self.kernel_initialization = weight_initialization
         self.bias_initialization = bias_initialization
@@ -73,32 +74,34 @@ class Convolution:
         self.output_shape = (batch_size, out_height, out_width, out_channels)
 
         if self.kernel is None:
-            self.kernel = self.initialize_kernel(self.kernel_initialization, input_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape[3] * self.kernel_shape[0] * self.kernel_shape[1], self.kernel_shape)
+            kernel_input_size = input_shape[3] * self.kernel_shape[0] * self.kernel_shape[1]
+            kernel_output_size = self.kernel_shape[3] * self.kernel_shape[0] * self.kernel_shape[1]
+            self.kernel = self.initialize_kernel(self.kernel_initialization, kernel_input_size, kernel_output_size, self.kernel_shape, self.dtype)
         if self.bias is None:
-            self.bias = self.initialize_bias(self.bias_initialization, self.kernel_shape[3])
+            self.bias = self.initialize_bias(self.bias_initialization, self.kernel_shape[3], self.dtype)
 
-        self.kernel_change_cache = np.zeros(shape=self.kernel.shape)
-        self.bias_change_cache = np.zeros(self.kernel_shape[3])
+        self.kernel_change_cache = np.zeros(self.kernel.shape, dtype=self.dtype)
+        self.bias_change_cache = np.zeros(self.kernel_shape[3], dtype=self.dtype)
 
     @staticmethod
-    def initialize_kernel(initialization: str, input_size: int, output_size: int, kernel_size: list):
+    def initialize_kernel(initialization: str, input_size: int, output_size: int, kernel_size: list, dtype=np.float32):
         match initialization:
             case 'He' | 'Kaiming':
-                return np.random.normal(0, scale=np.sqrt(2.0 / input_size), size=kernel_size)
+                return np.random.normal(0, scale=np.sqrt(2.0 / input_size), size=kernel_size).astype(dtype)
             case 'Xavier' | 'Glorot':
-                return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=kernel_size)
+                return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=kernel_size).astype(dtype)
             case 'LeCun':
-                return np.random.normal(0, scale=np.sqrt(1.0 / input_size), size=kernel_size)
+                return np.random.normal(0, scale=np.sqrt(1.0 / input_size), size=kernel_size).astype(dtype)
             case 'swish':
-                return np.random.normal(0, scale=1.1 / np.sqrt(input_size), size=kernel_size)
+                return np.random.normal(0, scale=1.1 / np.sqrt(input_size), size=kernel_size).astype(dtype)
             case _:
                 raise Exception("initialization method not found or not implemented. Maybe check spelling?")
 
     @staticmethod
-    def initialize_bias(initialization: str, size: int):
+    def initialize_bias(initialization: str, size: int, dtype: np.float32):
         match initialization:
             case 'none':
-                return np.zeros(size)
+                return np.zeros(size, dtype=dtype)
 
     def get_activation_function(self):
         return self._ACTIVATION_MAP[self.activation_function][0]
@@ -133,9 +136,8 @@ class Convolution:
 
     @staticmethod
     def cross_correlate2d(input_tensor: np.ndarray, kernel: np.ndarray, stride: list, padding: list, dtype=np.float32):
-
         @njit(parallel=True, fastmath=True, cache=True)
-        def pad(x, pad_h, pad_w):   # NHWC padding
+        def pad(x: np.ndarray, pad_h: int, pad_w: int):   # NHWC padding
             batch, in_h, in_w, channels = x.shape
             padded = np.zeros((batch, in_h + 2 * pad_h, in_w + 2 * pad_w, channels), dtype=x.dtype)
 
@@ -187,18 +189,18 @@ class Convolution:
 
         x_col = np.reshape(windows, (batch_size * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
         w_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')
-        output = np.dot(x_col, w_col).astype(dtype, copy=False)
+        output = np.dot(x_col.astype(dtype, copy=False), w_col.astype(dtype, copy=False))
 
         return output.reshape(batch_size, output_height, output_width, output_channels)
 
-    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride: list, padding: list):
+    def conv2d(self, input_tensor: np.ndarray, kernel: np.ndarray, stride: list, padding: list, dtype=np.float32):
         stride = [stride, stride] if isinstance(stride, int) else stride
-        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, padding)
+        return self.cross_correlate2d(input_tensor, np.rot90(kernel, 2), stride, padding, dtype)
 
-    def forprop(self, input_tensor):
+    def forprop(self, input_tensor: np.ndarray):
         assert input_tensor.size != 0
 
-        unactivated = self.cross_correlate2d(input_tensor, self.kernel, self.stride, self.get_padding_obj(self.padding)) + self.bias
+        unactivated = self.cross_correlate2d(input_tensor, self.kernel, self.stride, self.get_padding_obj(self.padding), self.dtype) + self.bias
         activated = self.get_activation_function()(unactivated)
         self.input_cache = input_tensor
         self.unactivated_output_cache = unactivated
@@ -213,11 +215,12 @@ class Convolution:
         # --- Partial Derivatives ---
         padding = self.get_padding_obj(self.padding)        # padding during forprop
         full_padding = self.get_padding_obj("full")
-        dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
-        dilated_dz = self.dilate(dz, self.stride)
+        di_padding = [full_padding[0]-padding[0], full_padding[1]-padding[1]]
+
+        dilated_dz = self.dilate(output_gradient.astype(self.dtype) * self.get_d_activation_function()(self.unactivated_output_cache), self.stride)
         dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=padding).transpose(1, 2, 0, 3)
-        db = np.sum(dz, axis=(0, 1, 2))
-        di = self.conv2d(dilated_dz, np.transpose(self.kernel, (0, 1, 3, 2)), stride=[1, 1], padding=[full_padding[0]-padding[0], full_padding[1]-padding[1]])
+        db = np.sum(dilated_dz, axis=(0, 1, 2), dtype=self.dtype)
+        di = self.conv2d(dilated_dz, np.transpose(self.kernel, (0, 1, 3, 2)), stride=[1, 1], padding=di_padding)
 
         #  --- Gradient Accumulation ---
         self.kernel_change_cache += dw
@@ -241,14 +244,14 @@ class Convolution:
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
 
         # --- Reset Caches ---
-        self.kernel_change_cache = np.zeros_like(self.kernel)
-        self.bias_change_cache = np.zeros_like(self.bias)
+        self.kernel_change_cache = np.zeros_like(self.kernel, dtype=self.dtype)
+        self.bias_change_cache = np.zeros_like(self.bias, dtype=self.dtype)
         self.input_cache = None
         self.unactivated_output_cache = None
 
 
 class Dense:
-    def __init__(self, size: int, activation_function='relu', weight_initialization='He', bias_initialization='none'):
+    def __init__(self, size: int, activation_function='relu', weight_initialization='He', bias_initialization='none', dtype= np.float32):
         """ input_tensor  : (batchsize, input_size)
             weights : (input_size, output_size)
             bias   : (output_size)
@@ -264,6 +267,7 @@ class Dense:
         self.size = size
         self.input_shape = None
         self.output_shape = [-1, size]
+        self.dtype = dtype
 
         self.weights = None
         self.bias = None
@@ -299,7 +303,7 @@ class Dense:
         self.input_shape = input_shape
 
         if self.weights is None:
-            self.weights = self.initialize_weights(self.weight_initialization, input_shape[1], self.size)
+            self.weights = self.initialize_weights(self.weight_initialization, input_shape[1], self.size, self.dtype)
         if self.bias is None:
             self.bias = self.initialize_bias(self.bias_initialization, self.size)
 
@@ -313,29 +317,29 @@ class Dense:
         return self._ACTIVATION_MAP[self.activation_function][1]
 
     @staticmethod
-    def initialize_weights(initialization: str, input_size: int, output_size: int):
+    def initialize_weights(initialization: str, input_size: int, output_size: int, dtype=np.float32):
         match initialization:
             case 'He' | 'Kaiming':
-                return np.random.normal(0, scale=np.sqrt(2.0 / input_size), size=(input_size, output_size))
+                return np.random.normal(0, scale=np.sqrt(2.0 / input_size), size=(input_size, output_size)).astype(dtype)
             case 'Xavier' | 'Glorot':
-                return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=(input_size, output_size))
+                return np.random.normal(0, scale=np.sqrt(2.0 / (input_size + output_size)), size=(input_size, output_size)).astype(dtype)
             case 'LeCun':
-                return np.random.normal(0, scale=np.sqrt(1.0 / input_size), size=(input_size, output_size))
+                return np.random.normal(0, scale=np.sqrt(1.0 / input_size), size=(input_size, output_size)).astype(dtype)
             case 'swish':
-                return np.random.normal(0, scale=1.1 / np.sqrt(input_size), size=(input_size, output_size))
+                return np.random.normal(0, scale=1.1 / np.sqrt(input_size), size=(input_size, output_size)).astype(dtype)
             case _:
                 raise Exception("initialization method not found or not implemented. Maybe check spelling?")
 
     @staticmethod
-    def initialize_bias(initialization: str, output_size: int):
+    def initialize_bias(initialization: str, output_size: int, dtype=np.float32):
         match initialization:
             case 'none':
-                return np.zeros((1, output_size))
+                return np.zeros((1, output_size), dtype=dtype)
 
     def forprop(self, input_tensor: np.ndarray):
         assert input_tensor.size != 0
 
-        unactivated = np.dot(input_tensor, self.weights) + self.bias
+        unactivated = np.dot(input_tensor.astype(self.dtype), self.weights) + self.bias
         activated = self.get_activation_function()(unactivated)
         self.input_cache = input_tensor
         self.unactivated_output_cache = unactivated
@@ -349,7 +353,7 @@ class Dense:
 
         # --- Partial Derivatives ---
         dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
-        dw = np.dot(self.input_cache.T, dz)
+        dw = np.dot(self.input_cache.T.astype(self.dtype), dz)
         db = np.sum(dz, axis=0, keepdims=True)
         di = np.dot(dz, self.weights.T)
 
@@ -375,8 +379,8 @@ class Dense:
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
 
         # --- Reset Caches ---
-        self.weight_change_cache = np.zeros_like(self.weights)
-        self.bias_change_cache = np.zeros_like(self.bias)
+        self.weight_change_cache = np.zeros_like(self.weights, dtype=self.dtype)
+        self.bias_change_cache = np.zeros_like(self.bias, dtype=self.dtype)
         self.input_cache = None
         self.unactivated_output_cache = None
 
@@ -409,8 +413,3 @@ class Dropout:
 
         binary_tensor = np.random.rand(*input_tensor.shape[1:]) <= (1 - self.dropout_rate)
         return input_tensor*binary_tensor/(1 - self.dropout_rate)
-
-    @staticmethod
-    def backprop(output_gradient: np.ndarray):
-        assert output_gradient.size != 0
-        return output_gradient

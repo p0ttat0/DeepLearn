@@ -1,6 +1,4 @@
 todo
-add cnn layers
-Quantization/ Mixed Precision Training
 add different loss function support (model output gradient, act funct derivatives)
 add multi thread
 add generic data loading
