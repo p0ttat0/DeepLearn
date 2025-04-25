@@ -20,7 +20,6 @@ my_model.build(input_shape=[-1, 28, 28], optimizer='Adam', loss_func="cce")
 my_model.save('saved models', 'model2')
 my_model.load('saved models/model2.npz')
 my_model.forprop(np.random.rand(12, 28, 28))
-my_model.backprop(np.random.rand(12, 10))
 
 tracker = MetricTracker(my_model, ['training accuracy', 'training losses', 'gradient magnitude', 'gradient extremes', 'activation magnitude', 'activation extremes'])
 

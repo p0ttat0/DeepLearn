@@ -160,14 +160,14 @@ class SequentialModel:
 
         return input_tensor
 
-    def backprop(self, output_gradient: np.ndarray):
+    def backprop(self, output_gradient: np.ndarray, batch_size: int, learning_rate: float, optimizer, clip_value: float):
         for layer in reversed(self.layers):
-            # back propagates to accumulate weight/bias changes and outputs input gradient
+            # back propagates, updates weight/bias changes, and outputs input gradient
             match layer.type:
                 case 'dense':
-                    output_gradient = layer.backprop(output_gradient)
+                    output_gradient = layer.backprop(output_gradient, batch_size, learning_rate, optimizer, clip_value)
                 case 'convolution':
-                    output_gradient = layer.backprop(output_gradient)
+                    output_gradient = layer.backprop(output_gradient, batch_size, learning_rate, optimizer, clip_value)
                 case 'dropout':
                     pass
                 case 'reshape':
@@ -214,7 +214,7 @@ class SequentialModel:
                 training_labels = data.training_labels[batch * batch_size:(batch + 1) * batch_size]
                 training_data = data.training_data[batch * batch_size:(batch + 1) * batch_size]
                 training_predictions = self.forprop(training_data)
-                self.backprop(training_predictions - training_labels)
+                self.backprop(training_predictions - training_labels, batch_size, learning_rate, self.optimizer_obj, clip_value)
 
                 # training metrics
                 indexes = np.random.choice(np.arange(training_data.shape[0]), size=readout_sample_size, replace=False)
@@ -224,10 +224,9 @@ class SequentialModel:
                 training_accuracy = np.sum(np.argmax(training_predictions, axis=1) == np.argmax(training_labels, axis=1)) / readout_sample_size
                 tracker.performance_metrics_update(loss, training_accuracy)
 
-                # applies changes
+                # tracking
                 for layer in self.layers:
                     if layer.type not in ['reshape', 'dropout', 'flatten']:
-                        layer.apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
                         tracker.training_metrics_update(layer.activation_magnitude, layer.activation_extremes, layer.output_gradient_magnitude, layer.output_gradient_extremes)
 
                 progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss, validation_loss, validation_accuracy)

@@ -206,7 +206,7 @@ class Convolution:
 
         return activated
 
-    def backprop(self, output_gradient: np.ndarray):
+    def backprop(self, output_gradient: np.ndarray, batch_size: int, lr: float, optimizer, clip_value: float):
         assert output_gradient.size != 0
         assert self.input_cache is not None
         assert self.unactivated_output_cache is not None
@@ -216,14 +216,10 @@ class Convolution:
         full_padding = self.get_padding_obj("full")
         di_padding = [full_padding[0]-padding[0], full_padding[1]-padding[1]]
 
-        dilated_dz = self.dilate(output_gradient.astype(self.dtype) * self.get_d_activation_function()(self.unactivated_output_cache), self.stride)
+        dilated_dz = self.dilate(output_gradient.astype(self.dtype) * self.get_d_activation_function()(self.unactivated_output_cache, dtype=self.dtype), self.stride)
         dw = self.cross_correlate2d(np.transpose(self.input_cache, (3, 1, 2, 0)), np.transpose(dilated_dz, (1, 2, 0, 3)), stride=[1, 1], padding=padding).transpose(1, 2, 0, 3)
         db = np.sum(dilated_dz, axis=(0, 1, 2), dtype=self.dtype)
         di = self.conv2d(dilated_dz, np.transpose(self.kernel, (0, 1, 3, 2)), stride=[1, 1], padding=di_padding)
-
-        #  --- Gradient Accumulation ---
-        self.kernel_change_cache += dw
-        self.bias_change_cache += db
 
         # --- Metrics Tracking ---
         self.activation_magnitude = np.mean(np.abs(self.unactivated_output_cache))
@@ -231,22 +227,16 @@ class Convolution:
         self.output_gradient_magnitude = np.mean(np.abs(output_gradient))
         self.output_gradient_extremes = np.max(output_gradient) + np.abs(np.min(output_gradient)) / 2
 
-        return di
-
-    def apply_changes(self, batch_size: int, lr: float, optimizer, clip_value: float):
-        assert np.any(self.kernel_change_cache)
-        assert np.any(self.bias_change_cache)
-
         #  --- Weights And Biases Update ---
-        weight_change, bias_change = optimizer.adjust_gradient(self.layer_num, self.kernel_change_cache / batch_size, self.bias_change_cache / batch_size, lr)
+        weight_change, bias_change = optimizer.adjust_gradient(self.layer_num, dw / batch_size, db / batch_size, lr, self.dtype)
         self.kernel -= np.clip(weight_change, -clip_value, clip_value)
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
 
         # --- Reset Caches ---
-        self.kernel_change_cache = np.zeros_like(self.kernel, dtype=self.dtype)
-        self.bias_change_cache = np.zeros_like(self.bias, dtype=self.dtype)
         self.input_cache = None
         self.unactivated_output_cache = None
+
+        return di
 
 
 class Dense:
@@ -344,13 +334,13 @@ class Dense:
 
         return activated
 
-    def backprop(self, output_gradient: np.ndarray):
+    def backprop(self, output_gradient: np.ndarray, batch_size: int, lr: float, optimizer, clip_value: float):
         assert output_gradient.size != 0
         assert self.input_cache is not None
         assert self.unactivated_output_cache is not None
 
         # --- Partial Derivatives ---
-        dz = output_gradient * self.get_d_activation_function()(self.unactivated_output_cache)
+        dz = output_gradient.astype(self.dtype) * self.get_d_activation_function()(self.unactivated_output_cache, dtype=self.dtype)
         dw = np.dot(self.input_cache.T.astype(self.dtype), dz)
         db = np.sum(dz, axis=0, keepdims=True)
         di = np.dot(dz, self.weights.T)
@@ -365,14 +355,8 @@ class Dense:
         self.output_gradient_magnitude = np.mean(np.abs(output_gradient))
         self.output_gradient_extremes = np.max(output_gradient) + np.abs(np.min(output_gradient)) / 2
 
-        return di
-
-    def apply_changes(self, batch_size: int, lr: float, optimizer, clip_value: float):
-        assert np.any(self.weight_change_cache)
-        assert np.any(self.bias_change_cache)
-
         #  --- Weights And Biases Update ---
-        weight_change, bias_change = optimizer.adjust_gradient(self.layer_num, self.weight_change_cache/batch_size, self.bias_change_cache/batch_size, lr)
+        weight_change, bias_change = optimizer.adjust_gradient(self.layer_num, self.weight_change_cache/batch_size, self.bias_change_cache/batch_size, lr, self.dtype)
         self.weights -= np.clip(weight_change, -clip_value, clip_value)
         self.bias -= np.clip(bias_change, -clip_value, clip_value)
 
@@ -382,6 +366,7 @@ class Dense:
         self.input_cache = None
         self.unactivated_output_cache = None
 
+        return di
 
 class Pooling:
     def __init__(self, kernel_size: int, stride: list, padding: list, pool_mode="max"):

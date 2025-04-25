@@ -1,6 +1,7 @@
 todo
 update model save/load for flatten and pooling layers
 add pooling layers
+optimizer superclass
 add different loss function support (model output gradient, act funct derivatives)
 add multi thread
 add generic data loading
