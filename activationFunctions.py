@@ -2,59 +2,47 @@ import numpy as np
 
 
 class ActivationFunction:
+    @staticmethod
+    def relu(x: np.ndarray, dtype=np.float32):
+        return np.maximum(0, x.astype(dtype))
 
     @staticmethod
-    def relu(x):
-        return np.maximum(0, x)
+    def sigmoid(x: np.ndarray, dtype=np.float32):
+        return 1 / (1 + np.exp(-x, dtype=dtype))
 
     @staticmethod
-    def sigmoid(x):
-        return 1 / (1 + np.exp(-x))
+    def tanh(x: np.ndarray, dtype=np.float32):
+        return np.tanh(x, dtype=dtype)
 
     @staticmethod
-    def tanh(x):
-        return np.tanh(x)
+    def swish(x: np.ndarray, dtype=np.float32):
+        return x.astype(dtype) / (1 + np.exp(-x, dtype=dtype))
 
     @staticmethod
-    def swish(x):
-        return x / (1 + np.exp(-x))
+    def softmax(x: np.ndarray, dtype=np.float32):
+        e_x = np.exp(x - np.max(x, axis=1, keepdims=True), dtype=dtype)
+        return e_x / np.sum(e_x, axis=1, keepdims=True, dtype=dtype)
 
     @staticmethod
-    def mish(x):
-        return x * np.tanh(np.log(1 + np.exp(x)))
+    def d_relu(x: np.ndarray, dtype=np.uint8):
+        return (x > 0).astype(dtype)
 
     @staticmethod
-    def softmax(x):
-        e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-        return e_x / np.sum(e_x, axis=1, keepdims=True)
-
-    @staticmethod
-    def d_relu(x):
-        return (x > 0).astype(np.int8)
-
-    @staticmethod
-    def d_sigmoid(x):
-        activated = 1 / (1 + np.exp(-x))
+    def d_sigmoid(x: np.ndarray, dtype=np.float32):
+        activated = 1 / (1 + np.exp(-x, dtype=dtype))
         return activated * (1 - activated)
 
     @staticmethod
-    def d_tanh(x):
-        activated = np.tanh(x)
-        return 1 - np.square(activated)
+    def d_tanh(x: np.ndarray, dtype=np.float32):
+        activated = np.tanh(x, dtype=dtype)
+        return 1 - np.square(activated, dtype=dtype)
 
     @staticmethod
-    def d_swish(x):
-        sig = 1 / (1 + np.exp(-x))
-        return sig * (1 + x * (1 - sig))
-
-    @staticmethod
-    def d_mish(x):  # maybe right
-        sp = np.log1p(np.exp(x))  # soft plus(x)
-        tsp = np.tanh(sp)
-        sigmoid = 1.0 / (1.0 + np.exp(-x))
-        return tsp + x * sigmoid * (1.0 - tsp * tsp)
+    def d_swish(x: np.ndarray, dtype=np.float32):
+        sig = 1 / (1 + np.exp(-x, dtype=dtype))
+        return sig * (1 + x.astype(dtype) * (1 - sig))
 
     @staticmethod
     # assumes categorical cross entropy
-    def d_softmax(x):
-        return np.ones_like(x)
+    def d_softmax(x: np.ndarray, dtype=np.float32):
+        return np.ones_like(x, dtype=dtype)

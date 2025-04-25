@@ -13,7 +13,7 @@ class Convolution:
         padding: 'valid' / 'same' / 'full'
     """
     def __init__(self, kernel_shape: list, activation_function='relu', weight_initialization='He', bias_initialization='none', padding='valid', stride=1, dtype=np.float32):
-        valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish']
+        valid_activations = ['relu', 'sigmoid', 'tanh', 'swish']
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
         
@@ -39,7 +39,6 @@ class Convolution:
             'sigmoid': (ActivationFunction.sigmoid, ActivationFunction.d_sigmoid),
             'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
             'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
-            'mish': (ActivationFunction.mish, ActivationFunction.d_mish),
         }
 
         # back prop
@@ -251,7 +250,7 @@ class Convolution:
 
 
 class Dense:
-    def __init__(self, size: int, activation_function='relu', weight_initialization='He', bias_initialization='none', dtype= np.float32):
+    def __init__(self, size: int, activation_function='relu', weight_initialization='He', bias_initialization='none', dtype=np.float32):
         """ input_tensor  : (batchsize, input_size)
             weights : (input_size, output_size)
             bias   : (output_size)
@@ -259,7 +258,7 @@ class Dense:
         if not isinstance(size, int) or size <= 0:
             raise ValueError("Size must be a positive integer")
 
-        valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'mish', 'softmax']
+        valid_activations = ['relu', 'sigmoid', 'tanh', 'swish', 'softmax']
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
 
@@ -281,7 +280,6 @@ class Dense:
             'sigmoid': (ActivationFunction.sigmoid, ActivationFunction.d_sigmoid),
             'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
             'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
-            'mish': (ActivationFunction.mish, ActivationFunction.d_mish),
             'softmax': (ActivationFunction.softmax, ActivationFunction.d_softmax),
         }
 
