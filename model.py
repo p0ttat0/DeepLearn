@@ -87,6 +87,8 @@ class SequentialModel:
                     layer_data[f'layer{i}'] = 'reshape'
                     layer_data[f'layer{i}_input_shape'] = self.layers[i].input_shape
                     layer_data[f'layer{i}_output_shape'] = self.layers[i].output_shape
+                case 'flatten':
+                    layer_data[f'layer{i}'] = 'flatten'
                 case 'dropout':
                     layer_data[f'layer{i}'] = 'dropout'
                     layer_data[f'layer{i}_dropout_rate'] = self.layers[i].dropout_rate
@@ -125,6 +127,8 @@ class SequentialModel:
                 case 'reshape':
                     new_layer = layers.Reshape(tuple(data[f'layer{i}_output_shape'].tolist()))
                     new_layer.input_shape = tuple(data[f'layer{i}_input_shape'].tolist())
+                case 'flatten':
+                    new_layer = layers.Flatten()
                 case 'dropout':
                     new_layer = layers.Dropout(float(data[f'layer{i}_dropout_rate']))
                 case _:
@@ -140,14 +144,16 @@ class SequentialModel:
             assert input_tensor.shape[0] == batch_size
 
             match layer.type:
+                case 'dense':
+                    input_tensor = layer.forprop(input_tensor)
+                case 'convolution':
+                    input_tensor = layer.forprop(input_tensor)
                 case 'dropout':
                     if mode == 'testing':
                         continue
                 case 'reshape':
                     input_tensor = layer.forprop(input_tensor)
-                case 'dense':
-                    input_tensor = layer.forprop(input_tensor)
-                case 'convolution':
+                case 'flatten':
                     input_tensor = layer.forprop(input_tensor)
                 case _:
                     raise Exception(f'unknown layer type {layer.type}')
@@ -158,13 +164,15 @@ class SequentialModel:
         for layer in reversed(self.layers):
             # back propagates to accumulate weight/bias changes and outputs input gradient
             match layer.type:
+                case 'dense':
+                    output_gradient = layer.backprop(output_gradient)
+                case 'convolution':
+                    output_gradient = layer.backprop(output_gradient)
                 case 'dropout':
                     pass
                 case 'reshape':
                     output_gradient = layer.backprop(output_gradient)
-                case 'dense':
-                    output_gradient = layer.backprop(output_gradient)
-                case 'convolution':
+                case 'flatten':
                     output_gradient = layer.backprop(output_gradient)
                 case _:
                     raise Exception(f'unknown layer type {layer.type}')
@@ -218,7 +226,7 @@ class SequentialModel:
 
                 # applies changes
                 for layer in self.layers:
-                    if layer.type not in ['reshape', 'dropout']:
+                    if layer.type not in ['reshape', 'dropout', 'flatten']:
                         layer.apply_changes(batch_size, learning_rate, self.optimizer_obj, clip_value)
                         tracker.training_metrics_update(layer.activation_magnitude, layer.activation_extremes, layer.output_gradient_magnitude, layer.output_gradient_extremes)
 

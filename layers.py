@@ -500,25 +500,24 @@ class Reshape:
         assert output_gradient.size != 0
         return output_gradient.reshape(self.input_shape)
 
-    class Flatten:
-        def __init__(self, keep_axis=0):
-            self.type = 'flatten'
-            self.layer_num = None
-            self.input_shape = None
-            self.output_shape = None
-            self.keep_axis = keep_axis
+class Flatten:
+    def __init__(self):
+        self.type = 'flatten'
+        self.layer_num = None
+        self.input_shape = None
+        self.output_shape = None
 
-        def build(self, input_shape: tuple):
-            self.input_shape = input_shape
-            self.output_shape = (input_shape[self.keep_axis], sum(list(input_shape[:self.keep_axis]+input_shape[self.keep_axis:])))
+    def build(self, input_shape: tuple):
+        self.input_shape = input_shape
+        self.output_shape = (input_shape[0], int(np.prod(input_shape[1:])))
 
-        def forprop(self, input_tensor: np.ndarray):
-            assert input_tensor.size != 0
-            return input_tensor.transpose(self.keep_axis, -1).reshape(self.output_shape)
+    def forprop(self, input_tensor: np.ndarray):
+        assert input_tensor.size != 0
+        return input_tensor.reshape(self.output_shape)
 
-        def backprop(self, output_gradient: np.ndarray):
-            assert output_gradient.size != 0
-            return output_gradient.reshape(self.input_shape)
+    def backprop(self, output_gradient: np.ndarray):
+        assert output_gradient.size != 0
+        return output_gradient.reshape(self.input_shape)
 
 
 class Dropout:

@@ -1,5 +1,5 @@
 from model import SequentialModel
-from layers import Dense, Reshape, Dropout, Convolution, Pooling
+from layers import Dense, Reshape, Dropout, Convolution, Pooling, Flatten
 from data import Dataset
 from tracking import MetricTracker
 import numpy as np
@@ -11,7 +11,7 @@ my_model = SequentialModel()
 my_model.layers = [
     Reshape((-1, 28, 28, 1)),
     Convolution([3, 3, 1, 2], 'relu', 'He', padding='same', stride=2),
-    Reshape((-1, 392)),
+    Flatten(),
     Dense(64, "swish", 'He'),
     Dense(10, 'softmax', 'Xavier'),
 ]
