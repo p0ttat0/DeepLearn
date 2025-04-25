@@ -149,8 +149,8 @@ class Convolution:
             input_tensor  : (batch_size, height, width, input_channels)
             kernel : (kernel_height, kernel_width, input_channels, output_channels)
             bias   : (output_channels,)
-            stride : Stride for height/width
-            padding: 'same' or 'valid'
+            stride : (vertical_stride, horizontal_stride)
+            padding: (vertical_padding, horizontal_padding)
         Returns:
             output : (batch_size, output_height, output_width, output_channels)
         """
@@ -159,15 +159,15 @@ class Convolution:
         kernel_height, kernel_width, _, output_channels = kernel.shape
 
         # --- Padding ---
-        padding_height = padding[0]
-        padding_width = padding[1]
+        vertical_padding = padding[0]
+        horizontal_padding = padding[1]
 
-        padded_input = pad(input_tensor, padding_height, padding_width)
-        height_pad, width_pad = padded_input.shape[1], padded_input.shape[2]
+        padded_input = pad(input_tensor, vertical_padding, horizontal_padding)
+        padded_height, padded_width = padded_input.shape[1], padded_input.shape[2]
 
         # --- Output Dimensions ---
-        output_height = (height_pad - kernel_height) // stride[0] + 1
-        output_width = (width_pad - kernel_width) // stride[1] + 1
+        output_height = (padded_height - kernel_height) // stride[0] + 1
+        output_width = (padded_width - kernel_width) // stride[1] + 1
 
         batch_stride, height_stride, width_stride, channel_stride = padded_input.strides
         strides = (
@@ -398,6 +398,79 @@ class Reshape:
     def backprop(self, output_gradient: np.ndarray):
         assert output_gradient.size != 0
         return output_gradient.reshape(self.input_shape)
+
+
+class Pooling:
+    def __init__(self, stride: list, kernel_size: int, pool_mode="max"):
+        self.stride = [stride, stride] if isinstance(stride, int) else stride
+        self.layer_type = "pooling"
+        self.kernel_size = kernel_size
+        self.pool_mode = pool_mode
+
+        # --- for backprop ---
+        self.input_data = None
+        self.prev_layer = None
+        self.argmax_indexes = None
+
+    @staticmethod
+    def pool(input_tensor: np.ndarray, kernel_size: int, stride: list, padding: list, pool_mode='max'):
+        @njit(parallel=True, fastmath=True, cache=True)
+        def pad(x: np.ndarray, pad_h: int, pad_w: int):   # NHWC padding
+            batch, in_h, in_w, channels = x.shape
+            padded = np.zeros((batch, in_h + 2 * pad_h, in_w + 2 * pad_w, channels), dtype=x.dtype)
+
+            for b in prange(batch):
+                for c in prange(channels):
+                    padded[b, pad_h:pad_h + in_h, pad_w:pad_w + in_w, c] = x[b, :, :, c]
+            return padded
+        """
+        Args:
+            input_tensor  : (batch_size, height, width, input_channels)
+            kernel : (kernel_size, kernel_size)
+            bias   : (output_channels,)
+            stride : (vertical_stride, horizontal_stride)
+            padding: (vertical_padding, horizontal_padding)
+        Returns:
+            output : (batch_size, output_height, output_width, output_channels)
+        """
+        # --- Dimensions ---
+        batch_size, height, width, input_channels = input_tensor.shape
+        kernel_height = kernel_width = kernel_size
+
+        # --- Padding ---
+        vertical_padding = padding[0]
+        horizontal_padding = padding[1]
+
+        padded_input = pad(input_tensor, vertical_padding, horizontal_padding)
+        padded_height, padded_width = padded_input.shape[1], padded_input.shape[2]
+
+        # --- Output Dimensions ---
+        output_height = (padded_height - kernel_height) // stride[0] + 1
+        output_width = (padded_width - kernel_width) // stride[1] + 1
+
+        batch_stride, height_stride, width_stride, channel_stride = padded_input.strides
+        strides = (
+            batch_stride,
+            height_stride * stride[0],
+            width_stride * stride[1],
+            height_stride,
+            width_stride,
+            channel_stride
+        )
+
+        windows = as_strided(
+            padded_input,
+            shape=(batch_size, output_height, output_width, kernel_height, kernel_width, input_channels),
+            strides=strides,
+            writeable=False
+        )
+
+        if pool_mode == 'max':
+            return np.max(windows, axis=(3, 4))
+        elif pool_mode == 'average':
+            return np.average(windows, axis=(3, 4))
+        else:
+            raise Exception(f"unknown pool mode {pool_mode}")
 
 
 class Dropout:
