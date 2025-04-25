@@ -383,29 +383,22 @@ class Dense:
         self.unactivated_output_cache = None
 
 
-class Reshape:
-    def __init__(self, output_shape: tuple):
-        self.type = 'reshape'
-        self.layer_num = None
-        self.input_shape = None
-        self.output_shape = output_shape
-
-    def forprop(self, input_tensor: np.ndarray):
-        assert input_tensor.size != 0
-        assert input_tensor.shape[1:] == self.input_shape[1:]
-        return input_tensor.reshape(self.output_shape)
-
-    def backprop(self, output_gradient: np.ndarray):
-        assert output_gradient.size != 0
-        return output_gradient.reshape(self.input_shape)
-
-
 class Pooling:
-    def __init__(self, stride: list, kernel_size: int, pool_mode="max"):
+    def __init__(self, kernel_size: int, stride: list, padding: list, pool_mode="max"):
+        if not isinstance(kernel_size, int) or kernel_size <= 0:
+            raise ValueError("kernel_size must be a positive integer")
+
+        valid_pool_modes = ['max', 'average']
+        if pool_mode not in valid_pool_modes:
+            raise ValueError(f"Invalid pool_mode. Must be one of {valid_pool_modes}")
+
         self.stride = [stride, stride] if isinstance(stride, int) else stride
         self.layer_type = "pooling"
         self.kernel_size = kernel_size
         self.pool_mode = pool_mode
+        self.padding = padding
+        self.input_shape = None
+        self.output_shape = None
 
         # --- for backprop ---
         self.input_data = None
@@ -466,11 +459,66 @@ class Pooling:
         )
 
         if pool_mode == 'max':
+            indexes = np.tile(np.arange(0, output_height*output_width*stride, stride), batch_size*input_channels).reshape(batch_size, output_height, output_width, input_channels)
+            indexes += np.argmax(windows.reshape(batch_size, output_height, output_width, kernel_height*kernel_width, input_channels), axis=3)
             return np.max(windows, axis=(3, 4))
         elif pool_mode == 'average':
             return np.average(windows, axis=(3, 4))
         else:
             raise Exception(f"unknown pool mode {pool_mode}")
+
+    def forprop(self, input_tensor: np.ndarray):
+        assert input_tensor.size != 0
+        return self.pool(input_tensor, self.kernel_size, self.stride, self.padding, self.pool_mode)
+
+    def backprop(self, output_gradient: np.ndarray):
+        assert output_gradient.size != 0
+        if self.pool_mode == 'max':
+            return output_gradient
+        elif self.pool_mode == 'average':
+            return output_gradient
+        else:
+            raise Exception(f"unknown pool mode {self.pool_mode}")
+
+
+class Reshape:
+    def __init__(self, output_shape: tuple):
+        self.type = 'reshape'
+        self.layer_num = None
+        self.input_shape = None
+        self.output_shape = output_shape
+
+    def build(self, input_shape: tuple):
+        self.input_shape = input_shape
+
+    def forprop(self, input_tensor: np.ndarray):
+        assert input_tensor.size != 0
+        assert input_tensor.shape[1:] == self.input_shape[1:]
+        return input_tensor.reshape(self.output_shape)
+
+    def backprop(self, output_gradient: np.ndarray):
+        assert output_gradient.size != 0
+        return output_gradient.reshape(self.input_shape)
+
+    class Flatten:
+        def __init__(self, keep_axis=0):
+            self.type = 'flatten'
+            self.layer_num = None
+            self.input_shape = None
+            self.output_shape = None
+            self.keep_axis = keep_axis
+
+        def build(self, input_shape: tuple):
+            self.input_shape = input_shape
+            self.output_shape = (input_shape[self.keep_axis], sum(list(input_shape[:self.keep_axis]+input_shape[self.keep_axis:])))
+
+        def forprop(self, input_tensor: np.ndarray):
+            assert input_tensor.size != 0
+            return input_tensor.transpose(self.keep_axis, -1).reshape(self.output_shape)
+
+        def backprop(self, output_gradient: np.ndarray):
+            assert output_gradient.size != 0
+            return output_gradient.reshape(self.input_shape)
 
 
 class Dropout:

@@ -1,5 +1,5 @@
 from model import SequentialModel
-from layers import Dense, Reshape, Dropout, Convolution
+from layers import Dense, Reshape, Dropout, Convolution, Pooling
 from data import Dataset
 from tracking import MetricTracker
 import numpy as np

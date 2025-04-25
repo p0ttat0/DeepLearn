@@ -45,8 +45,9 @@ class SequentialModel:
                         self.optimizer_obj.fme[layer_num] = [np.zeros(layer.kernel.shape), np.zeros(layer.bias.shape)]
                         self.optimizer_obj.sme[layer_num] = [np.zeros(layer.kernel.shape), np.zeros(layer.bias.shape)]
                 case "reshape":
-                    layer.input_shape = input_shape
-                    pass
+                    layer.build(input_shape)
+                case "flatten":
+                    layer.build(input_shape)
                 case "dropout":
                     pass
             layer.layer_num = layer_num
