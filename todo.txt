@@ -1,6 +1,8 @@
 todo
-update model save/load for flatten and pooling layers
+standardize assertions
+convolutional padding ?????
 add pooling layers
+add different x y stride compatability to max pooling
 optimizer superclass
 add different loss function support (model output gradient, act funct derivatives)
 add multi thread
