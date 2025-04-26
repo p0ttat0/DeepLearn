@@ -115,16 +115,15 @@ class SequentialModel:
             match data[f'layer{i}']:
                 case 'dense':
                     size = data[f'layer{i}_weights'].shape[0]
-                    new_layer = layers.Dense(size)
+                    new_layer = layers.Dense(size, activation_function=str(data[f'layer{i}_activation_func']))
                     new_layer.dtype = eval(str(data[f'layer{i}_dtype']))
                     new_layer.weight_initialization = str(data[f'layer{i}_weights_init'])
                     new_layer.bias_initialization = str(data[f'layer{i}_bias_init'])
                     new_layer.input_shape = tuple(data[f'layer{i}_input_shape'].tolist())
                     new_layer.weights = data[f'layer{i}_weights']
                     new_layer.bias = data[f'layer{i}_bias']
-                    new_layer.activation_function = str(data[f'layer{i}_activation_func'])
                 case 'convolution':
-                    new_layer = layers.Convolution(data[f'layer{i}_kernel'].shape)
+                    new_layer = layers.Convolution(data[f'layer{i}_kernel'].shape, activation_function=str(data[f'layer{i}_activation_func']))
                     new_layer.dtype = eval(str(data[f'layer{i}_dtype']))
                     new_layer.kernel_initialization = str(data[f'layer{i}_kernel_init'])
                     new_layer.bias_initialization = str(data[f'layer{i}_bias_init'])
@@ -133,7 +132,6 @@ class SequentialModel:
                     new_layer.bias = data[f'layer{i}_bias']
                     new_layer.padding = data[f'layer{i}_padding'].tolist()
                     new_layer.stride = data[f'layer{i}_stride'].tolist()
-                    new_layer.activation_function = str(data[f'layer{i}_activation_func'])
                 case 'pooling':
                     kernel_size = data[f'layer{i}_kernel_size'].tolist()
                     stride = data[f'layer{i}_stride'].tolist()

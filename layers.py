@@ -15,7 +15,14 @@ class Convolution:
         valid_activations = ['relu', 'sigmoid', 'tanh', 'swish']
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
-        
+
+        self._ACTIVATION_MAP = {
+            'relu': (ActivationFunction.relu, ActivationFunction.d_relu),
+            'sigmoid': (ActivationFunction.sigmoid, ActivationFunction.d_sigmoid),
+            'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
+            'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
+        }
+
         # --- layer general attributes ---
         self.type = 'convolution'
         self.kernel_shape = kernel_shape
@@ -32,13 +39,8 @@ class Convolution:
         self.kernel_initialization = weight_initialization
         self.bias_initialization = bias_initialization
         self.activation_function = activation_function
-
-        self._ACTIVATION_MAP = {
-            'relu': (ActivationFunction.relu, ActivationFunction.d_relu),
-            'sigmoid': (ActivationFunction.sigmoid, ActivationFunction.d_sigmoid),
-            'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
-            'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
-        }
+        self.act_func = self._ACTIVATION_MAP[activation_function][0]
+        self.d_act_func = self._ACTIVATION_MAP[activation_function][1]
 
         # --- back prop variables ---
         self.layer_num = None
@@ -82,12 +84,6 @@ class Convolution:
             match self.bias_initialization:
                 case 'none':
                     self.bias = np.zeros(self.kernel_shape[3], dtype=self.dtype)
-
-    def get_activation_function(self):
-        return self._ACTIVATION_MAP[self.activation_function][0]
-
-    def get_d_activation_function(self):
-        return self._ACTIVATION_MAP[self.activation_function][1]
 
     def get_padding_obj(self, padding_type):
         match padding_type:
@@ -184,7 +180,7 @@ class Convolution:
     def forprop(self, input_tensor: np.ndarray):
         assert input_tensor.size != 0
         unactivated = self.cross_correlate2d(input_tensor, self.kernel, self.stride, self.padding, self.dtype) + self.bias
-        activated = self.get_activation_function()(unactivated)
+        activated = self.act_func(unactivated)
         self.input_cache = input_tensor
         self.unactivated_output_cache = unactivated
 
@@ -199,7 +195,7 @@ class Convolution:
         full_padding = self.get_padding_obj("full")
         di_padding = [full_padding[0]-self.padding[0], full_padding[1]-self.padding[1]]
 
-        dilated_dz = self.dilate(output_gradient.astype(self.dtype) * self.get_d_activation_function()(self.unactivated_output_cache, dtype=self.dtype), self.stride)
+        dilated_dz = self.dilate(output_gradient.astype(self.dtype) * self.d_act_func(self.unactivated_output_cache, dtype=self.dtype), self.stride)
         dw = self.cross_correlate2d(self.input_cache.transpose(3, 1, 2, 0), dilated_dz.transpose(1, 2, 0, 3), stride=[1, 1], padding=self.padding).transpose(1, 2, 0, 3)
         db = np.sum(dilated_dz, axis=(0, 1, 2), dtype=self.dtype)
         di = self.conv2d(dilated_dz, self.kernel.transpose(0, 1, 3, 2), stride=[1, 1], padding=di_padding)
@@ -235,6 +231,14 @@ class Dense:
         if activation_function not in valid_activations:
             raise ValueError(f"Invalid activation function. Must be one of {valid_activations}")
 
+        self._ACTIVATION_MAP = {
+            'relu': (ActivationFunction.relu, ActivationFunction.d_relu),
+            'sigmoid': (ActivationFunction.sigmoid, ActivationFunction.d_sigmoid),
+            'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
+            'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
+            'softmax': (ActivationFunction.softmax, ActivationFunction.d_softmax),
+        }
+
         self.type = 'dense'
         self.size = size
         self.input_shape = None
@@ -247,21 +251,15 @@ class Dense:
         self.weight_initialization = weight_initialization
         self.bias_initialization = bias_initialization
         self.activation_function = activation_function
+        self.act_func = self._ACTIVATION_MAP[activation_function][0]
+        self.d_act_func = self._ACTIVATION_MAP[activation_function][1]
 
-        self._ACTIVATION_MAP = {
-            'relu': (ActivationFunction.relu, ActivationFunction.d_relu),
-            'sigmoid': (ActivationFunction.sigmoid, ActivationFunction.d_sigmoid),
-            'tanh': (ActivationFunction.tanh, ActivationFunction.d_tanh),
-            'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
-            'softmax': (ActivationFunction.softmax, ActivationFunction.d_softmax),
-        }
-
-        # back prop
+        # --- back prop variables ---
         self.layer_num = None
         self.input_cache = None
         self.unactivated_output_cache = None
 
-        # metrics tracking
+        # --- metrics tracking variables ---
         self.output_gradient_magnitude = []
         self.output_gradient_extremes = []
         self.activation_magnitude = []
@@ -292,17 +290,11 @@ class Dense:
                 case 'none':
                     self.bias = np.zeros((1, self.size), dtype=self.dtype)
 
-    def get_activation_function(self):
-        return self._ACTIVATION_MAP[self.activation_function][0]
-
-    def get_d_activation_function(self):
-        return self._ACTIVATION_MAP[self.activation_function][1]
-
     def forprop(self, input_tensor: np.ndarray):
         assert input_tensor.size != 0
 
         unactivated = np.dot(input_tensor.astype(self.dtype), self.weights) + self.bias
-        activated = self.get_activation_function()(unactivated)
+        activated = self.act_func(unactivated)
         self.input_cache = input_tensor
         self.unactivated_output_cache = unactivated
 
@@ -314,7 +306,7 @@ class Dense:
         assert self.unactivated_output_cache is not None
 
         # --- Partial Derivatives ---
-        dz = output_gradient.astype(self.dtype) * self.get_d_activation_function()(self.unactivated_output_cache, dtype=self.dtype)
+        dz = output_gradient.astype(self.dtype) * self.d_act_func(self.unactivated_output_cache, dtype=self.dtype)
         dw = np.dot(self.input_cache.T.astype(self.dtype), dz)
         db = np.sum(dz, axis=0, keepdims=True)
         di = np.dot(dz, self.weights.T)
