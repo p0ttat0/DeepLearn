@@ -3,8 +3,8 @@ import layers
 from progress_bar import ProgressBar
 from optimizers import Adam, NoOptimizer
 from pynput import keyboard
-from tracking import MetricTracker
 from data import Data
+from matplotlib import pyplot as plt
 
 
 class SequentialModel:
@@ -14,6 +14,52 @@ class SequentialModel:
         self.optimizer_obj = None
         self.loss_func = None
         self.input_shape = None
+
+        # --- tracking ---
+        self.training_accuracy = []
+        self.training_losses = []
+        self.gradient_magnitude = []
+        self.gradient_extremes = []
+        self.activation_magnitude = []
+        self.activation_extremes = []
+        self.tracked_metrics = None
+
+    def training_metrics_update(self, activations_magnitude, activations_extremes, gradient_magnitude, gradient_extremes):
+        self.gradient_magnitude.append(gradient_magnitude)
+        self.gradient_extremes.append(gradient_extremes)
+        self.activation_magnitude.append(activations_magnitude)
+        self.activation_extremes.append(activations_extremes)
+
+    def performance_metrics_update(self, loss, training_accuracy):
+        self.training_accuracy.append(training_accuracy)
+        self.training_losses.append(loss)
+
+    def show_metrics(self):
+        temp = {'training accuracy': self.training_accuracy,
+                'training losses': self.training_losses,
+                'gradient magnitude': self.gradient_magnitude,
+                'gradient extremes': self.gradient_extremes,
+                'activation magnitude': self.activation_magnitude,
+                'activation extremes': self.activation_extremes
+                }
+        tracked = [temp[metric] for metric in self.tracked_metrics if metric in temp]
+
+        assert len(tracked) == len(self.tracked_metrics)
+
+        for i in range(len(self.tracked_metrics)):
+            x, y = np.arange(len(tracked[i])), tracked[i]
+            plt.plot(x, y, 'o')
+            if len(tracked[i]) > 1:
+                plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)))
+            plt.title(self.tracked_metrics[i])
+            plt.show()
+
+    def reset(self):
+        self.training_accuracy = []
+        self.training_losses = []
+        self.gradient_magnitude = []
+        self.gradient_extremes = []
+        self.activation_magnitude = []
 
     @staticmethod
     def get_optimizer(optimizer: str):
@@ -25,10 +71,11 @@ class SequentialModel:
             case _:
                 raise Exception(f"no optimizer called {optimizer}")
 
-    def build(self, input_shape, optimizer='Adam', loss_func='cce'):
+    def build(self, input_shape, optimizer='Adam', loss_func='cce', tracked_metrics=('training accuracy', 'training losses')):
         self.optimizer = optimizer
         self.optimizer_obj = self.get_optimizer(optimizer)
         self.loss_func = loss_func
+        self.tracked_metrics = tracked_metrics
         self.input_shape = input_shape
 
         layer_num = 0
@@ -39,30 +86,35 @@ class SequentialModel:
                     if optimizer == "Adam":
                         self.optimizer_obj.fme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
                         self.optimizer_obj.sme[layer_num] = [np.zeros(layer.weights.shape), np.zeros(layer.bias.shape)]
+                    input_shape = layer.output_shape
                 case "convolution":
                     layer.build(input_shape)
                     if optimizer == "Adam":
                         self.optimizer_obj.fme[layer_num] = [np.zeros(layer.kernel.shape), np.zeros(layer.bias.shape)]
                         self.optimizer_obj.sme[layer_num] = [np.zeros(layer.kernel.shape), np.zeros(layer.bias.shape)]
+                    input_shape = layer.output_shape
                 case "pooling":
                     layer.build(input_shape)
+                    input_shape = layer.output_shape
                 case "reshape":
                     layer.build(input_shape)
+                    input_shape = layer.output_shape
                 case "flatten":
                     layer.build(input_shape)
+                    input_shape = layer.output_shape
                 case "dropout":
                     pass
                 case _:
                     raise Exception(f"unknown layer type {layer.type}")
 
             layer.layer_num = layer_num
-            input_shape = layer.output_shape
             layer_num += 1
 
     def save(self, directory: str, file_name: str):
         layer_data = {'layer_num': len(self.layers),
                       'optimizer': self.optimizer,
                       'loss_func': self.loss_func,
+                      'tracked_metrics': self.tracked_metrics,
                       'input_shape': self.input_shape
                       }
 
@@ -151,7 +203,7 @@ class SequentialModel:
 
             self.layers.append(new_layer)
 
-        self.build(tuple(data['input_shape'].tolist()), str(data['optimizer']), str(data['loss_func']))
+        self.build(tuple(data['input_shape'].tolist()), str(data['optimizer']), str(data['loss_func']), tuple(data['tracked_metrics']))
 
     def forprop(self, input_tensor: np.ndarray, mode='training'):
         batch_size = input_tensor.shape[0]
@@ -175,7 +227,6 @@ class SequentialModel:
                     input_tensor = layer.forprop(input_tensor)
                 case _:
                     raise Exception(f'unknown layer type {layer.type}')
-
         return input_tensor
 
     def backprop(self, output_gradient: np.ndarray, batch_size: int, learning_rate: float, optimizer, clip_value: float):
@@ -197,7 +248,7 @@ class SequentialModel:
                 case _:
                     raise Exception(f'unknown layer type {layer.type}')
 
-    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float, tracker: MetricTracker, readout_freq=10, readout_sample_size=100, dtype=np.float32):
+    def train(self, data: Data, epochs: int, batch_size: int, learning_rate: float, clip_value: float, readout_freq=10, readout_sample_size=100, dtype=np.float32):
         assert readout_sample_size < batch_size
 
         def on_press(key):
@@ -214,7 +265,6 @@ class SequentialModel:
 
         progress_bar = ProgressBar()
         progress_bar.start()
-        tracker.reset()
         training = True
         validation_loss = 0
         validation_accuracy = 0
@@ -244,7 +294,7 @@ class SequentialModel:
                 training_labels = training_labels[training_indexes]
                 loss = -np.sum(training_labels * np.log(np.clip(training_predictions, 1e-7, 1 - 1e-7))) / readout_sample_size
                 training_accuracy = np.sum(np.argmax(training_predictions, axis=1) == np.argmax(training_labels, axis=1)) / readout_sample_size
-                tracker.performance_metrics_update(loss, training_accuracy)
+                self.performance_metrics_update(loss, training_accuracy)
 
                 # --- tracking ---
                 activation_magnitude = []
@@ -257,7 +307,7 @@ class SequentialModel:
                         activation_extremes.append(layer.activation_extremes)
                         output_gradient_magnitude.append(layer.output_gradient_magnitude)
                         output_gradient_extremes.append(layer.output_gradient_extremes)
-                tracker.training_metrics_update(np.mean(activation_magnitude), np.mean(activation_extremes), np.mean(output_gradient_magnitude), np.mean(output_gradient_extremes))
+                self.training_metrics_update(np.mean(activation_magnitude), np.mean(activation_extremes), np.mean(output_gradient_magnitude), np.mean(output_gradient_extremes))
 
                 progress_bar.update(epochs, batch + epoch * batches_per_epoch, batches_per_epoch, training_accuracy, loss, validation_loss, validation_accuracy)
                 self.optimizer_obj.step += 1
@@ -270,7 +320,7 @@ class SequentialModel:
             break
 
         progress_bar.end()
-        tracker.show()
+        self.show_metrics()
 
     def test(self, data: np.ndarray, labels: np.ndarray, iterations):
         import matplotlib.pyplot as plt

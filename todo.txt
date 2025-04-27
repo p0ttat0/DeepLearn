@@ -2,7 +2,6 @@ todo
 remove tracker class
 standardize assertions
 convolutional padding ?????
-test and optimize pooling layers
 add different x y stride compatability to max pooling
 add different loss function support (model output gradient, act funct derivatives)
 add multi thread
