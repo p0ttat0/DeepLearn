@@ -416,14 +416,15 @@ class Pooling:
             shape=(batch_size, output_height, output_width, kernel_height, kernel_width, input_channels),
             strides=strides,
             writeable=False
-        )
+        ).reshape((batch_size, output_height*output_width, kernel_height*kernel_width, input_channels))
 
         if pool_mode == 'max':
-            indexes = np.tile(np.arange(0, output_height*output_width*stride[0], stride[0]), batch_size*input_channels).reshape(batch_size, output_height, output_width, input_channels)
-            indexes += np.argmax(windows.reshape(batch_size, output_height, output_width, kernel_height*kernel_width, input_channels), axis=3)
-            return np.max(windows, axis=(3, 4)), indexes.reshape(batch_size, output_height*output_width, input_channels)
+            indexes = np.tile(np.arange(0, output_height*output_width*stride[0], stride[0]), batch_size*input_channels).reshape(batch_size, -1, input_channels)
+            indexes += np.argmax(windows, axis=2)
+            out = np.take_along_axis(input_tensor.reshape(batch_size, -1, input_channels), indexes, axis=1).reshape(batch_size, output_height, output_width, input_channels)
+            return out, indexes
         elif pool_mode == 'average':
-            # return np.average(windows, axis=(3, 4))
+            # return np.average(windows, axis=(2))
             pass
         else:
             raise Exception(f"unknown pool mode {pool_mode}")
@@ -453,12 +454,12 @@ class Pooling:
         if self.pool_mode == 'max':
             batch_size, output_height, output_width, input_channels = output_gradient.shape
             _, input_height, input_width, _ = self.input_shape
-            di = np.zeros((batch_size, input_height*input_width, input_channels))
+            di = np.zeros((batch_size, input_height*input_width, input_channels), dtype=np.float32)
             batches = np.arange(batch_size)[:, np.newaxis, np.newaxis]
             in_ch = np.arange(input_channels)[np.newaxis, np.newaxis, :]
 
             # broadcasts indexes for batches, num_indexes, in_ch total
-            np.add.at(di, (batches, self.argmax_indexes, in_ch), output_gradient.reshape(batch_size, output_height*output_width, input_channels))
+            np.add.at(di, (batches, self.argmax_indexes, in_ch), output_gradient.reshape(batch_size, -1, input_channels))
             return di.reshape(batch_size, input_height, input_width, input_channels)
         elif self.pool_mode == 'average':
             return output_gradient

@@ -11,8 +11,8 @@ my_model = SequentialModel()
 
 my_model.layers = [
     Reshape((-1, 28, 28, 1)),
-    Convolution([3, 3, 1, 2], 'relu', 'He', padding='same', stride=1),
-    # Pooling(3, [2, 2], padding='none', pool_mode="max"),
+    Convolution([3, 3, 1, 4], 'relu', 'He', padding='same', stride=1),
+    Pooling(3, [2, 2], padding='none', pool_mode="max"),
     Flatten(),
     Dense(64, "swish", 'He'),
     Dense(10, 'softmax', 'Xavier'),
