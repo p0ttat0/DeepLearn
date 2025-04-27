@@ -54,7 +54,7 @@ class Dataset:
         testing_labels = np.frombuffer(f.read(10000), dtype=np.uint8).astype(int)[:, np.newaxis]  # 2d array
         testing_labels = np.eye(10)[testing_labels].squeeze()
 
-        return Data(img_data.reshape((60000, 28, 28)).astype(np.float32), img_labels, testing_data.reshape((10000, 28, 28)).astype(np.float32), testing_labels)
+        return Data(img_data.astype(np.float32), img_labels, testing_data.astype(np.float32), testing_labels)
 
     @staticmethod
     def load_generic(training_data_path, training_labels_path,validation_data_path, validation_labels_path):

@@ -11,25 +11,28 @@ my_model = SequentialModel()
 
 my_model.layers = [
     Reshape((-1, 28, 28, 1)),
-    Convolution([3, 3, 1, 4], 'relu', 'He', padding='same', stride=1),
+    Convolution([3, 3, 1, 2], 'relu', 'He', padding='valid', stride=1),
     Pooling(3, [2, 2], padding='none', pool_mode="max"),
+    Convolution([3, 3, 2, 4], 'relu', 'He', padding='valid', stride=1),
+    Pooling(3, [1, 1], padding='none', pool_mode="max"),
     Flatten(),
+    Dense(256, "swish", 'He'),
     Dense(64, "swish", 'He'),
     Dense(10, 'softmax', 'Xavier'),
 ]
 
-my_model.build(input_shape=[-1, 28, 28], optimizer='Adam', loss_func="cce")
-my_model.save('saved models', 'model2')
-my_model.load('saved models/model2.npz')
-my_model.forprop(np.random.rand(12, 28, 28))
-my_model.backprop(np.random.rand(12, 10), 12, 0, Adam(), 5)
+my_model.build(input_shape=(-1, 784), optimizer='Adam', loss_func="cce")
+#my_model.save('saved models', 'model2')
+#my_model.load('saved models/model2.npz')
+#my_model.forprop(np.random.rand(12, 28, 28))
+#my_model.backprop(np.random.rand(12, 10), 12, 0, Adam(), 5)
 
 tracker = MetricTracker(my_model, ['training accuracy', 'training losses', 'gradient magnitude', 'gradient extremes', 'activation magnitude', 'activation extremes'])
 
 my_model.train(
     data,
     epochs=10,
-    batch_size=300,
+    batch_size=600,
     learning_rate=0.001,
     clip_value=4,
     tracker=tracker,
