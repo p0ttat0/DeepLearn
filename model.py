@@ -186,6 +186,8 @@ class SequentialModel:
                     output_gradient = layer.backprop(output_gradient, batch_size, learning_rate, optimizer, clip_value)
                 case 'convolution':
                     output_gradient = layer.backprop(output_gradient, batch_size, learning_rate, optimizer, clip_value)
+                case 'pooling':
+                    output_gradient = layer.backprop(output_gradient)
                 case 'dropout':
                     pass
                 case 'reshape':
@@ -250,7 +252,7 @@ class SequentialModel:
                 output_gradient_magnitude = []
                 output_gradient_extremes = []
                 for layer in self.layers:
-                    if layer.type not in ['reshape', 'dropout', 'flatten']:
+                    if layer.type not in ['reshape', 'dropout', 'flatten', 'pooling']:
                         activation_magnitude.append(layer.activation_magnitude)
                         activation_extremes.append(layer.activation_extremes)
                         output_gradient_magnitude.append(layer.output_gradient_magnitude)

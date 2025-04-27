@@ -32,7 +32,7 @@ class Convolution:
         # --- layer type specific attributes ---
         self.kernel = None
         self.bias = None
-        self.padding = self.get_padding_obj(padding)
+        self.padding = self.get_padding_obj(padding) if isinstance(padding, str) else padding
         self.stride = [stride, stride] if isinstance(stride, int) else stride
         self.dtype = dtype
 
@@ -343,7 +343,7 @@ class Pooling:
         self.layer_type = "pooling"
         self.kernel_size = kernel_size
         self.pool_mode = pool_mode
-        self.padding = self.get_padding_obj(padding)
+        self.padding = self.get_padding_obj(padding) if isinstance(padding, str) else padding
         self.input_shape = None
         self.output_shape = None
 
@@ -421,9 +421,10 @@ class Pooling:
         if pool_mode == 'max':
             indexes = np.tile(np.arange(0, output_height*output_width*stride[0], stride[0]), batch_size*input_channels).reshape(batch_size, output_height, output_width, input_channels)
             indexes += np.argmax(windows.reshape(batch_size, output_height, output_width, kernel_height*kernel_width, input_channels), axis=3)
-            return np.max(windows, axis=(3, 4))
+            return np.max(windows, axis=(3, 4)), indexes.reshape(batch_size, output_height*output_width, input_channels)
         elif pool_mode == 'average':
-            return np.average(windows, axis=(3, 4))
+            # return np.average(windows, axis=(3, 4))
+            pass
         else:
             raise Exception(f"unknown pool mode {pool_mode}")
 
@@ -432,16 +433,33 @@ class Pooling:
         out_height = (in_height+self.padding[0] * 2 - self.kernel_size + 1) // self.stride[0]
         out_width = (in_width + self.padding[1] * 2 - self.kernel_size + 1) // self.stride[1]
 
+        self.input_shape = input_shape
         self.output_shape = (-1, out_height, out_width, in_channels)
 
     def forprop(self, input_tensor: np.ndarray):
         assert input_tensor.size != 0
-        return self.pool(input_tensor, self.kernel_size, self.stride, self.padding, self.pool_mode)
+
+        if self.pool_mode == "max":
+            out, indexes = self.pool(input_tensor, self.kernel_size, self.stride, self.padding, "max")
+            self.argmax_indexes = indexes
+        elif self.pool_mode == "average":
+            out = self.pool(input_tensor, self.kernel_size, self.stride, self.padding, "average")
+        else:
+            raise Exception(f"no pool mode {self.pool_mode}")
+        return out
 
     def backprop(self, output_gradient: np.ndarray):
         assert output_gradient.size != 0
         if self.pool_mode == 'max':
-            return output_gradient
+            batch_size, output_height, output_width, input_channels = output_gradient.shape
+            _, input_height, input_width, _ = self.input_shape
+            di = np.zeros((batch_size, input_height*input_width, input_channels))
+            batches = np.arange(batch_size)[:, np.newaxis, np.newaxis]
+            in_ch = np.arange(input_channels)[np.newaxis, np.newaxis, :]
+
+            # broadcasts indexes for batches, num_indexes, in_ch total
+            np.add.at(di, (batches, self.argmax_indexes, in_ch), output_gradient.reshape(batch_size, output_height*output_width, input_channels))
+            return di.reshape(batch_size, input_height, input_width, input_channels)
         elif self.pool_mode == 'average':
             return output_gradient
         else:
