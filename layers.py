@@ -1,7 +1,6 @@
 import numpy as np
 from activationFunctions import ActivationFunction
-from numpy.lib.stride_tricks import as_strided
-from numba import njit, prange
+from convolutionHelpers import pad, get_windows
 
 
 class Convolution:
@@ -43,6 +42,9 @@ class Convolution:
         self.d_act_func = self._ACTIVATION_MAP[activation_function][1]
 
         # --- back prop variables ---
+        # due to stride some input elements won't have any effect on the output and won't be "active"
+        self.active_input_height = None
+        self.active_input_width = None
         self.layer_num = None
         self.input_cache = None
         self.unactivated_output_cache = None
@@ -57,11 +59,14 @@ class Convolution:
         assert len(input_shape) == 4
         batch_size, in_height, in_width, in_channels = input_shape
         kernel_height, kernel_width, kernel_in_channels, out_channels = self.kernel_shape
+        height_stride, width_stride = self.stride
 
-        out_height = (in_height+self.padding[0] * 2 - kernel_height + 1) // self.stride[0]
-        out_width = (in_width + self.padding[1] * 2 - kernel_width + 1) // self.stride[1]
+        out_height = (in_height + (self.padding[0] * 2) - (kernel_height - 1)) // self.stride[0]
+        out_width = (in_width + (self.padding[1] * 2) - (kernel_width - 1)) // self.stride[1]
 
         self.input_shape = input_shape
+        self.active_input_height = (out_height-1)*height_stride+kernel_height
+        self.active_input_width = (out_width-1)*width_stride+kernel_width
         self.output_shape = (batch_size, out_height, out_width, out_channels)
 
         if self.kernel is None:
@@ -93,8 +98,6 @@ class Convolution:
                 return [0, 0]
             case 'full':
                 return [self.kernel_shape[0] - 1, self.kernel_shape[1] - 1]
-            case 'none':
-                return [0, 0]
             case _:
                 raise Exception(f'unsupported padding type {padding_type}')
 
@@ -103,10 +106,8 @@ class Convolution:
         if dilation_rate == [1, 1]:
             return input_tensor
 
-        # output_height = (input_tensor.shape[1] - 1) * dilation_rate[1] + 1
-        # output_width = (input_tensor.shape[2] - 1) * dilation_rate[0] + 1
-        output_height = input_tensor.shape[1] * dilation_rate[1]
-        output_width = input_tensor.shape[2] * dilation_rate[0]
+        output_height = (input_tensor.shape[1] - 1) * dilation_rate[1] + 1
+        output_width = (input_tensor.shape[2] - 1) * dilation_rate[0] + 1
         dilated = np.zeros((input_tensor.shape[0], output_height, output_width, input_tensor.shape[3]))
         dilated[:, ::dilation_rate[1], ::dilation_rate[0], :] = input_tensor
 
@@ -114,58 +115,29 @@ class Convolution:
 
     @staticmethod
     def cross_correlate2d(input_tensor: np.ndarray, kernel: np.ndarray, stride: list, padding: list, dtype=np.float32):
-        @njit(parallel=True, fastmath=True, cache=True)
-        def pad(x: np.ndarray, pad_h: int, pad_w: int):   # NHWC padding
-            batch, in_h, in_w, channels = x.shape
-            padded = np.zeros((batch, in_h + 2*pad_h, in_w + 2*pad_w, channels), dtype=x.dtype)
-
-            for b in prange(batch):
-                for c in prange(channels):
-                    padded[b, pad_h:pad_h + in_h, pad_w:pad_w + in_w, c] = x[b, :, :, c]
-            return padded
-
         """
         Args:
             input_tensor  : (batch_size, height, width, input_channels)
             kernel : (kernel_height, kernel_width, input_channels, output_channels)
-            bias   : (output_channels,)
             stride : (vertical_stride, horizontal_stride)
             padding: (vertical_padding, horizontal_padding)
+            dtype  : np datatype
         Returns:
             output : (batch_size, output_height, output_width, output_channels)
         """
+
+        padded_input = pad(input_tensor, padding)
 
         # --- Dimensions ---
         batch_size, height, width, input_channels = input_tensor.shape
         kernel_height, kernel_width, _, output_channels = kernel.shape
 
-        # --- Padding ---
-        vertical_padding = padding[0]
-        horizontal_padding = padding[1]
-
-        padded_input = pad(input_tensor, vertical_padding, horizontal_padding)
-        padded_height, padded_width = padded_input.shape[1], padded_input.shape[2]
-
         # --- Output Dimensions ---
-        output_height = (padded_height - kernel_height) // stride[0] + 1
-        output_width = (padded_width - kernel_width) // stride[1] + 1
+        _, padded_height, padded_width, _ = padded_input.shape
+        output_height = (padded_height - kernel_height + 1) // stride[0]
+        output_width = (padded_width - kernel_width + 1) // stride[1]
 
-        batch_stride, height_stride, width_stride, channel_stride = padded_input.strides
-        strides = (
-            batch_stride,
-            height_stride * stride[0],
-            width_stride * stride[1],
-            height_stride,
-            width_stride,
-            channel_stride
-        )
-
-        windows = as_strided(
-            padded_input,
-            shape=(batch_size, output_height, output_width, kernel_height, kernel_width, input_channels),
-            strides=strides,
-            writeable=False
-        )
+        windows = get_windows(padded_input, kernel.shape, stride)
 
         x_col = np.reshape(windows, (batch_size * output_height * output_width, kernel_height * kernel_width * input_channels), order='C')
         w_col = np.reshape(kernel, (kernel_height * kernel_width * input_channels, output_channels), order='F')
@@ -193,12 +165,14 @@ class Convolution:
 
         # --- Partial Derivatives ---
         full_padding = self.get_padding_obj("full")
-        di_padding = [full_padding[0]-self.padding[0], full_padding[1]-self.padding[1]]
+        di_padding = [full_padding[0]-self.padding[0], full_padding[1]-self.padding[1]]     # skips the padding inputs
+        active_input_cache = self.input_cache[:, :self.active_input_height, :self.active_input_width, :]
 
         dilated_dz = self.dilate(output_gradient.astype(self.dtype) * self.d_act_func(self.unactivated_output_cache, dtype=self.dtype), self.stride)
-        dw = self.cross_correlate2d(self.input_cache.transpose(3, 1, 2, 0), dilated_dz.transpose(1, 2, 0, 3), stride=[1, 1], padding=self.padding).transpose(1, 2, 0, 3)
+        dw = self.cross_correlate2d(active_input_cache.transpose(3, 1, 2, 0), dilated_dz.transpose(1, 2, 0, 3), stride=[1, 1], padding=self.padding).transpose(1, 2, 0, 3)
         db = np.sum(dilated_dz, axis=(0, 1, 2), dtype=self.dtype)
-        di = self.conv2d(dilated_dz, self.kernel.transpose(0, 1, 3, 2), stride=[1, 1], padding=di_padding)
+        di = np.zeros(self.input_shape, dtype=self.dtype)
+        di[:, :self.active_input_height, :self.active_input_width, :] = self.conv2d(dilated_dz, self.kernel.transpose(0, 1, 3, 2), stride=[1, 1], padding=di_padding)
 
         # --- Metrics Tracking ---
         self.activation_magnitude = np.mean(np.abs(self.unactivated_output_cache))
@@ -348,7 +322,7 @@ class Pooling:
         self.output_shape = None
 
         # --- for backprop ---
-        self.input_data = None
+        self.input_cache = None
         self.prev_layer = None
         self.argmax_indexes = None
 
@@ -360,63 +334,34 @@ class Pooling:
                 return [0, 0]
             case 'full':
                 return [self.kernel_size - 1, self.kernel_size - 1]
-            case 'none':
-                return [0, 0]
             case _:
                 raise Exception(f'unsupported padding type {padding_type}')
 
     @staticmethod
     def pool(input_tensor: np.ndarray, kernel_size: int, stride: list, padding: list, pool_mode='max'):
-        @njit(parallel=True, fastmath=True, cache=True)
-        def pad(x: np.ndarray, pad_h: int, pad_w: int):   # NHWC padding
-            batch, in_h, in_w, channels = x.shape
-            padded = np.zeros((batch, in_h + 2 * pad_h, in_w + 2 * pad_w, channels), dtype=x.dtype)
-
-            for b in prange(batch):
-                for c in prange(channels):
-                    padded[b, pad_h:pad_h + in_h, pad_w:pad_w + in_w, c] = x[b, :, :, c]
-            return padded
         """
         Args:
             input_tensor  : (batch_size, height, width, input_channels)
-            kernel : (kernel_size, kernel_size)
-            bias   : (output_channels,)
-            stride : (vertical_stride, horizontal_stride)
-            padding: (vertical_padding, horizontal_padding)
+            kernel_size : kernel width and height
+            stride      : (vertical_stride, horizontal_stride)
+            padding     : (vertical_padding, horizontal_padding)
+            pool_mode   : max or average
         Returns:
             output : (batch_size, output_height, output_width, output_channels)
         """
+
+        padded_input = pad(input_tensor, padding)
+
         # --- Dimensions ---
         batch_size, height, width, input_channels = input_tensor.shape
-        kernel_height = kernel_width = kernel_size
-
-        # --- Padding ---
-        vertical_padding = padding[0]
-        horizontal_padding = padding[1]
-
-        padded_input = pad(input_tensor, vertical_padding, horizontal_padding)
-        padded_height, padded_width = padded_input.shape[1], padded_input.shape[2]
+        kernel_shape = (kernel_size, kernel_size, input_channels, input_channels)
 
         # --- Output Dimensions ---
-        output_height = (padded_height - kernel_height) // stride[0] + 1
-        output_width = (padded_width - kernel_width) // stride[1] + 1
+        _, padded_height, padded_width, _ = padded_input.shape
+        output_height = (padded_height - kernel_size) // stride[0] + 1
+        output_width = (padded_width - kernel_size) // stride[1] + 1
 
-        batch_stride, height_stride, width_stride, channel_stride = padded_input.strides
-        strides = (
-            batch_stride,
-            height_stride * stride[0],
-            width_stride * stride[1],
-            height_stride,
-            width_stride,
-            channel_stride
-        )
-
-        windows = as_strided(
-            padded_input,
-            shape=(batch_size, output_height, output_width, kernel_height, kernel_width, input_channels),
-            strides=strides,
-            writeable=False
-        ).reshape((batch_size, output_height*output_width, kernel_height*kernel_width, input_channels))
+        windows = get_windows(input_tensor, kernel_shape, stride).reshape((batch_size, output_height*output_width, kernel_size*kernel_size, input_channels))
 
         if pool_mode == 'max':
             indexes = np.tile(np.arange(0, output_height*output_width*stride[0], stride[0]), batch_size*input_channels).reshape(batch_size, -1, input_channels)
@@ -443,6 +388,7 @@ class Pooling:
         if self.pool_mode == "max":
             out, indexes = self.pool(input_tensor, self.kernel_size, self.stride, self.padding, "max")
             self.argmax_indexes = indexes
+            self.input_cache = input_tensor
         elif self.pool_mode == "average":
             out = self.pool(input_tensor, self.kernel_size, self.stride, self.padding, "average")
         else:

@@ -11,11 +11,6 @@ class Adam:
         self.sme = {}  # Second moment estimate
 
     def adjust_gradient(self, layer, weight_gradient, bias_gradient, learning_rate, dtype=np.float32):
-        if layer not in self.fme:
-            # Initialize moments for this layer
-            self.fme[layer] = [np.zeros_like(weight_gradient, dtype=dtype), np.zeros_like(bias_gradient, dtype=dtype)]
-            self.sme[layer] = [np.zeros_like(weight_gradient, dtype=dtype), np.zeros_like(bias_gradient, dtype=dtype)]
-
         # Update moments first
         self.fme[layer][0] = (self.b1 * self.fme[layer][0] + (1 - self.b1) * weight_gradient).astype(dtype)
         self.fme[layer][1] = (self.b1 * self.fme[layer][1] + (1 - self.b1) * bias_gradient).astype(dtype)
