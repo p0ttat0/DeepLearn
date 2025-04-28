@@ -8,7 +8,7 @@ class ActivationFunction:
 
     @staticmethod
     def sigmoid(x: np.ndarray, dtype=np.float32):
-        return 1 / (1 + np.exp(-x, dtype=dtype))
+        return 1 / (1 + np.exp(-x, dtype=np.float64)).astype(dtype)
 
     @staticmethod
     def tanh(x: np.ndarray, dtype=np.float32):
@@ -16,11 +16,11 @@ class ActivationFunction:
 
     @staticmethod
     def swish(x: np.ndarray, dtype=np.float32):
-        return x.astype(dtype) / (1 + np.exp(-x, dtype=dtype))
+        return x.astype(dtype) / (1 + np.exp(-x, dtype=np.float64)).astype(dtype)
 
     @staticmethod
     def softmax(x: np.ndarray, dtype=np.float32):
-        e_x = np.exp(x - np.max(x, axis=1, keepdims=True), dtype=dtype)
+        e_x = np.exp(x - np.max(x, axis=1, keepdims=True), dtype=np.float64).astype(dtype)
         return e_x / np.sum(e_x, axis=1, keepdims=True, dtype=dtype)
 
     @staticmethod
@@ -29,7 +29,7 @@ class ActivationFunction:
 
     @staticmethod
     def d_sigmoid(x: np.ndarray, dtype=np.float32):
-        activated = 1 / (1 + np.exp(-x, dtype=dtype))
+        activated = 1 / (1 + np.exp(-x, dtype=np.float64)).astype(dtype)
         return activated * (1 - activated)
 
     @staticmethod
@@ -39,7 +39,7 @@ class ActivationFunction:
 
     @staticmethod
     def d_swish(x: np.ndarray, dtype=np.float32):
-        sig = 1 / (1 + np.exp(-x, dtype=dtype))
+        sig = 1 / (1 + np.exp(-x, dtype=np.float64)).astype(dtype)
         return sig * (1 + x.astype(dtype) * (1 - sig))
 
     @staticmethod
