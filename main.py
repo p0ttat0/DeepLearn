@@ -11,7 +11,7 @@ my_model = SequentialModel()
 my_model.layers = [
     Reshape((-1, 28, 28, 1)),
     Dropout(0.1),
-    Convolution([3, 3, 1, 2], 'relu', 'He', padding='valid', stride=3),
+    Convolution([3, 3, 1, 2], 'relu', 'He', padding='valid', stride=1),
     Pooling(3, [1, 1], padding='valid', pool_mode="max"),
     Dropout(0.1),
     Flatten(),

@@ -50,10 +50,10 @@ class Convolution:
         self.unactivated_output_cache = None
 
         # --- metrics tracking variables---
-        self.output_gradient_magnitude = []
-        self.output_gradient_extremes = []
-        self.activation_magnitude = []
-        self.activation_extremes = []
+        self.output_gradient_magnitude = None
+        self.output_gradient_extremes = None
+        self.activation_magnitude = None
+        self.activation_extremes = None
 
     def build(self, input_shape: tuple):
         assert len(input_shape) == 4
@@ -166,12 +166,12 @@ class Convolution:
         # --- Partial Derivatives ---
         full_padding = self.get_padding_obj("full")
         di_padding = [full_padding[0]-self.padding[0], full_padding[1]-self.padding[1]]     # skips the padding inputs
-        active_input_cache = self.input_cache[:, :self.active_input_height, :self.active_input_width, :]
+        active_input_cache = self.input_cache[:, :self.active_input_height, :self.active_input_width, :]    # active portion of input
 
         dilated_dz = self.dilate(output_gradient.astype(self.dtype) * self.d_act_func(self.unactivated_output_cache, dtype=self.dtype), self.stride)
         dw = self.cross_correlate2d(active_input_cache.transpose(3, 1, 2, 0), dilated_dz.transpose(1, 2, 0, 3), stride=[1, 1], padding=self.padding).transpose(1, 2, 0, 3)
         db = np.sum(dilated_dz, axis=(0, 1, 2), dtype=self.dtype)
-        di = np.zeros(self.input_shape, dtype=self.dtype)
+        di = np.zeros(self.input_cache.shape, dtype=self.dtype)
         di[:, :self.active_input_height, :self.active_input_width, :] = self.conv2d(dilated_dz, self.kernel.transpose(0, 1, 3, 2), stride=[1, 1], padding=di_padding)
 
         # --- Metrics Tracking ---
@@ -234,10 +234,10 @@ class Dense:
         self.unactivated_output_cache = None
 
         # --- metrics tracking variables ---
-        self.output_gradient_magnitude = []
-        self.output_gradient_extremes = []
-        self.activation_magnitude = []
-        self.activation_extremes = []
+        self.output_gradient_magnitude = None
+        self.output_gradient_extremes = None
+        self.activation_magnitude = None
+        self.activation_extremes = None
 
     def build(self, input_shape: tuple):
         assert len(input_shape) == 2

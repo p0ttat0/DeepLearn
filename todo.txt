@@ -5,7 +5,7 @@ average pooling
 add different loss function support (model output gradient, act funct derivatives)
 add multi thread
 add generic data loading
-standardize assertions
+standardize assertions and add more doc strings
 add batch norm
 add multi object detection
 
