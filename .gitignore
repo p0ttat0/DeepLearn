@@ -5,3 +5,5 @@ __pycache__/
 
 # PyCharm / IntelliJ IDEA settings
 .idea/
+
+test.py
