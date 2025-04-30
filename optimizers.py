@@ -17,7 +17,7 @@ class Adam:
         self.sme[layer][0] = (self.b2 * self.sme[layer][0] + (1 - self.b2) * np.square(weight_gradient)).astype(dtype)
         self.sme[layer][1] = (self.b2 * self.sme[layer][1] + (1 - self.b2) * np.square(bias_gradient)).astype(dtype)
 
-        # Bias correction
+        # Bias correction to account for initial zero estimates
         bc_m_weights = self.fme[layer][0] / (1 - self.b1 ** self.step)
         bc_v_weights = self.sme[layer][0] / (1 - self.b2 ** self.step)
         bc_m_bias = self.fme[layer][1] / (1 - self.b1 ** self.step)

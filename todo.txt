@@ -1,5 +1,6 @@
 todo
 average pooling
+fix act func dtype handling
 add different loss function support (model output gradient, act funct derivatives)
 add generic data loading
 standardize assertions and add more doc strings

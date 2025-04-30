@@ -22,13 +22,13 @@ class Convolution:
             'swish': (ActivationFunction.swish, ActivationFunction.d_swish),
         }
 
-        # --- layer general attributes ---
+        # --- Layer General Attributes ---
         self.type = 'convolution'
         self.kernel_shape = kernel_shape
         self.input_shape = None
         self.output_shape = None
 
-        # --- layer type specific attributes ---
+        # --- Layer Type Specific Attributes ---
         self.kernel = None
         self.bias = None
         self.padding = self.get_padding_obj(padding) if isinstance(padding, str) else padding
@@ -41,7 +41,7 @@ class Convolution:
         self.act_func = lambda x: self._ACTIVATION_MAP[activation_function][0](x, dtype=self.dtype)
         self.d_act_func = lambda x: self._ACTIVATION_MAP[activation_function][1](x, dtype=self.dtype)
 
-        # --- back prop variables ---
+        # --- Back Prop Variables ---
         # due to stride some input elements won't have any effect on the output and won't be "active"
         self.active_input_height = None
         self.active_input_width = None
@@ -49,7 +49,7 @@ class Convolution:
         self.input_cache = None
         self.unactivated_output_cache = None
 
-        # --- metrics tracking variables---
+        # --- Metrics Tracking Variables---
         self.output_gradient_magnitude = None
         self.output_gradient_extremes = None
         self.activation_magnitude = None
@@ -179,8 +179,7 @@ class Convolution:
         dilated_dz = self.dilate(output_gradient * self.d_act_func(self.unactivated_output_cache), self.stride)
         dw = self.cross_correlate2d(active_input_cache.transpose(3, 1, 2, 0), dilated_dz.transpose(1, 2, 0, 3), stride=[1, 1], padding=self.padding).transpose(1, 2, 0, 3)
         db = np.sum(dilated_dz, axis=(0, 1, 2))
-        di = np.zeros(self.input_cache.shape, dtype=self.dtype)
-        di += self.conv2d(dilated_dz, self.kernel.transpose(0, 1, 3, 2), stride=[1, 1], padding=di_padding)
+        di = self.conv2d(dilated_dz, self.kernel.transpose(0, 1, 3, 2), stride=[1, 1], padding=di_padding)
 
         # --- Metrics Tracking ---
         self.activation_magnitude = np.mean(np.abs(self.unactivated_output_cache))
@@ -236,12 +235,12 @@ class Dense:
         self.act_func = lambda x: self._ACTIVATION_MAP[activation_function][0](x, dtype=self.dtype)
         self.d_act_func = lambda x: self._ACTIVATION_MAP[activation_function][1](x, dtype=self.dtype)
 
-        # --- back prop variables ---
+        # --- Backprop Variables ---
         self.layer_num = None
         self.input_cache = None
         self.unactivated_output_cache = None
 
-        # --- metrics tracking variables ---
+        # --- Metrics Tracking Variables ---
         self.output_gradient_magnitude = None
         self.output_gradient_extremes = None
         self.activation_magnitude = None
@@ -335,7 +334,7 @@ class Pooling:
         self.input_shape = None
         self.output_shape = None
 
-        # --- for backprop ---
+        # --- For Backprop ---
         self.input_cache = None
         self.prev_layer = None
         self.argmax_indexes = None
@@ -373,8 +372,8 @@ class Pooling:
 
         # --- Output Dimensions ---
         _, padded_height, padded_width, _ = padded_input.shape
-        output_height = (padded_height - kernel_size) // stride[0] + 1
-        output_width = (padded_width - kernel_size) // stride[1] + 1
+        output_height = (padded_height - kernel_size + 1) // stride[0]
+        output_width = (padded_width - kernel_size + 1) // stride[1]
         num_outputs = output_width * output_height
 
         windows = (get_windows(padded_input, kernel_shape, stride))
@@ -389,11 +388,10 @@ class Pooling:
             the kernel was during forprop + an offset to get to where argmax was
             """
 
-            # creates grid with x step of stride[0] and y step of stride[1]
+            # Generate base indexes for top-left corners of pooling windows
             row_step = stride[0]
             col_step = stride[1]
-            row_starts = np.arange(0, row_step * output_height * padded_input_width,
-                                   row_step * padded_input_width).reshape(-1, 1)  # (output_height, 1)
+            row_starts = np.arange(0, row_step * output_height * padded_input_width, row_step * padded_input_width).reshape(-1, 1)  # (output_height, 1)
             col_increments = np.arange(0, col_step * output_width, col_step)  # (output_width, )
 
             # broadcasts row_starts and col_increments to (output_height, output_width) and tiles
@@ -439,8 +437,10 @@ class Pooling:
     def backprop(self, output_gradient: np.ndarray):
         assert output_gradient.size != 0
         if self.pool_mode == 'max':
+            # --- Dimensions ---
             batch_size, output_height, output_width, input_channels = output_gradient.shape
             _, input_height, input_width, _ = self.input_shape
+
             di = np.zeros((batch_size, input_height*input_width, input_channels), dtype=self.input_cache.dtype)
             batches = np.arange(batch_size)[:, np.newaxis, np.newaxis]
             in_ch = np.arange(input_channels)[np.newaxis, np.newaxis, :]
