@@ -11,9 +11,8 @@ my_model = SequentialModel()
 my_model.layers = [
     Reshape((-1, 28, 28, 1)),
     Dropout(0.2),
-    Pooling(3, [2, 2], padding='valid', pool_mode="max"),
-    Convolution([3, 3, 1, 4], 'swish', 'He', padding='valid', stride=1),
-    Pooling(3, [2, 2], padding='valid', pool_mode="max"),
+    Convolution([3, 3, 1, 4], 'swish', 'He', padding='same', stride=1),
+    Pooling(2, [1, 1], padding='valid', pool_mode="max"),
     Dropout(0.1),
     Flatten(),
     Dense(256, "swish", 'He'),
