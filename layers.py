@@ -389,14 +389,9 @@ class Pooling:
             """
 
             # Generate base indexes for top-left corners of pooling windows
-            row_step = stride[0]
-            col_step = stride[1]
-            row_starts = np.arange(0, row_step * output_height * padded_input_width, row_step * padded_input_width).reshape(-1, 1)  # (output_height, 1)
-            col_increments = np.arange(0, col_step * output_width, col_step)  # (output_width, )
-
-            # broadcasts row_starts and col_increments to (output_height, output_width) and tiles
-            indexes = (row_starts + col_increments).reshape(1, -1, 1)
-            indexes = np.tile(indexes, (batch_size, 1, channels))
+            row_starts = np.arange(0, stride[0] * output_height * padded_input_width, stride[0] * padded_input_width).reshape(-1, 1)  # (output_height, 1)
+            col_increments = np.arange(0, stride[1] * output_width, stride[1])  # (output_width, )
+            indexes = np.tile((row_starts + col_increments).reshape(1, -1, 1), (batch_size, 1, channels))
 
             # get argmax indexes relative to 0, 0 in the input tensor
             argmax = np.argmax(windows, axis=2)
@@ -437,17 +432,14 @@ class Pooling:
     def backprop(self, output_gradient: np.ndarray):
         assert output_gradient.size != 0
         if self.pool_mode == 'max':
-            # --- Dimensions ---
-            batch_size, output_height, output_width, input_channels = output_gradient.shape
-            _, input_height, input_width, _ = self.input_shape
-
+            batch_size, input_height, input_width, input_channels = self.input_cache.shape
             di = np.zeros((batch_size, input_height*input_width, input_channels), dtype=self.input_cache.dtype)
             batches = np.arange(batch_size)[:, np.newaxis, np.newaxis]
             in_ch = np.arange(input_channels)[np.newaxis, np.newaxis, :]
 
-            # broadcasts indexes for batches, num_indexes, in_ch total
             np.add.at(di, (batches, self.argmax_indexes, in_ch), output_gradient.reshape(batch_size, -1, input_channels))
-            return di.reshape(batch_size, input_height, input_width, input_channels)
+            return di.reshape(self.input_cache.shape)
+
         elif self.pool_mode == 'average':
             return output_gradient
         else:
