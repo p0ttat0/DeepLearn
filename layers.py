@@ -367,39 +367,46 @@ class Pooling:
         padded_input = pad(input_tensor, padding)
 
         # --- Dimensions ---
-        batch_size, input_height, input_width, channels = input_tensor.shape
+        batch_size, padded_input_height, padded_input_width, channels = padded_input.shape
         kernel_shape = (kernel_size, kernel_size, channels, channels)
-        num_inputs = input_height*input_width
+        num_inputs = padded_input_height * padded_input_width
 
         # --- Output Dimensions ---
         _, padded_height, padded_width, _ = padded_input.shape
         output_height = (padded_height - kernel_size) // stride[0] + 1
         output_width = (padded_width - kernel_size) // stride[1] + 1
-        num_outputs = output_width*output_height
+        num_outputs = output_width * output_height
 
-        windows = (get_windows(input_tensor, kernel_shape, stride))
-        windows = windows.reshape((batch_size, num_outputs, kernel_size*kernel_size, channels))
+        windows = (get_windows(padded_input, kernel_shape, stride))
+        windows = windows.reshape((batch_size, num_outputs, kernel_size * kernel_size, channels))
 
         if pool_mode == 'max':
             """
             saves a (batchsize, output_height*output_width, channels) tensor of indexes of argmax values 
             relative to a flattened (input_height, input_width) input matrix
-            
-            you can think of the initial indexes as a tensor of reference points for where the top left of 
-            the kernel was
+
+            you can think of the indexes as a tensor of reference points for where the top left of 
+            the kernel was during forprop + an offset to get to where argmax was
             """
 
-            row_step = stride[1]
-            col_step = stride[0]
-            row_starts = np.arange(0, row_step * output_height, row_step).reshape(-1, 1)     # (output_height, 1)
-            col_increments = np.arange(0, col_step * output_width, col_step)               # (output_width, )
+            # creates grid with x step of stride[0] and y step of stride[1]
+            row_step = stride[0]
+            col_step = stride[1]
+            row_starts = np.arange(0, row_step * output_height * padded_input_width,
+                                   row_step * padded_input_width).reshape(-1, 1)  # (output_height, 1)
+            col_increments = np.arange(0, col_step * output_width, col_step)  # (output_width, )
 
-            # broadcasts row_starts and col_increments to (output_height, output_width)
-            indexes = (row_starts + col_increments).reshape(1, num_outputs, 1)
+            # broadcasts row_starts and col_increments to (output_height, output_width) and tiles
+            indexes = (row_starts + col_increments).reshape(1, -1, 1)
             indexes = np.tile(indexes, (batch_size, 1, channels))
-            indexes += np.argmax(windows, axis=2)
 
-            out = np.take_along_axis(input_tensor.reshape(batch_size, num_inputs, channels), indexes, axis=1)
+            # get argmax indexes relative to 0, 0 in the input tensor
+            argmax = np.argmax(windows, axis=2)
+            relative = (argmax // kernel_size * padded_input_width) + (argmax % kernel_size)
+
+            indexes += relative
+
+            out = np.take_along_axis(padded_input.reshape(batch_size, num_inputs, channels), indexes, axis=1)
             out = out.reshape(batch_size, output_height, output_width, channels)
 
             return out, indexes
