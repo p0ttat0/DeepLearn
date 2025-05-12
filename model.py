@@ -166,7 +166,7 @@ class SequentialModel:
         for i in range(data['layer_num']):
             match data[f'layer{i}']:
                 case 'dense':
-                    size = data[f'layer{i}_weights'].shape[0]
+                    size = data[f'layer{i}_weights'].shape[1]
                     new_layer = layers.Dense(size, activation_function=str(data[f'layer{i}_activation_func']))
                     new_layer.dtype = eval(str(data[f'layer{i}_dtype']))
                     new_layer.weight_initialization = str(data[f'layer{i}_weights_init'])
@@ -327,8 +327,8 @@ class SequentialModel:
 
         for i in range(iterations):
             x = np.random.randint(0, data.shape[0])
-            plt.imshow(data[x], cmap='viridis')
+            plt.imshow(data[x].reshape(28, 28), cmap='viridis')
             plt.show()
-            prediction = self.forprop(data[x], mode='testing')
+            prediction = self.forprop(data[x][np.newaxis,:], mode='testing')
             print(prediction)
             print("prediction: "+str(np.argmax(prediction, axis=1)[0])+"     label:"+str(np.argmax(labels[x], axis=0)))

@@ -9,14 +9,8 @@ data = Dataset.mnist()
 my_model = SequentialModel()
 
 my_model.layers = [
-    Reshape((-1, 28, 28, 1)),
-    Dropout(0.2),
-    Convolution([3, 3, 1, 4], 'swish', 'He', padding='same', stride=1),
-    Pooling(2, [1, 1], padding='valid', pool_mode="max"),
-    Dropout(0.1),
-    Flatten(),
-    Dense(256, "swish", 'He'),
-    Dense(64, "swish", 'He'),
+    Dense(64, "relu", 'He'),
+    Dense(32, "relu", 'He'),
     Dense(10, 'softmax', 'Xavier'),
 ]
 
@@ -29,11 +23,11 @@ my_model.build(input_shape=(-1, 784),
                )
 
 # my_model.save('saved models', 'model2')
-# my_model.load('saved models/model1.npz')
+my_model.load('saved models/nano.npz')
 # my_model.forprop(np.random.rand(12, 784))
 # my_model.backprop(np.random.rand(12, 10), 12, 0, Adam(), 5)
 
-my_model.train(
+'''my_model.train(
     data,
     epochs=30,
     batch_size=300,
@@ -41,6 +35,6 @@ my_model.train(
     clip_value=4,
     readout_freq=5,
     readout_sample_size=256
-)
+)'''
 # my_model.test(data.validation_data, data.validation_labels, 5)
-my_model.save('saved models', 'model1')
+# my_model.save('saved models', 'nano')
